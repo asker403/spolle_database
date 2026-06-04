@@ -26,8 +26,9 @@ class SpotifyPriorityArtistDataFetcher:
         self.artists_data = []
         
         # Spotify API credentials
-        self.spotify_client_id = "015767dd9089403cabdd92c686530339"
-        self.spotify_client_secret = "67a2c62c212042168ffd831d13da1f80"
+        import os
+        self.spotify_client_id = os.environ.get("SPOTIFY_CLIENT_ID", "015767dd9089403cabdd92c686530339")
+        self.spotify_client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "67a2c62c212042168ffd831d13da1f80")
         self.spotify_token = None
         self.spotify_token_expires = 0
         
