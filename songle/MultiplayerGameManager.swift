@@ -11,14 +11,14 @@ import FirebaseFirestore
 
 // MARK: - Multiplayer Game Models
 struct MultiplayerPlayer: Codable, Identifiable {
-    let id = UUID()
+    var id: String { name }
     let name: String
     var guesses: [MultiplayerGuess] = []
     var isCorrect = false
-    let joinedAt = Date()
+    let joinedAt: Date
     
     var remainingGuesses: Int {
-        return max(0, 5 - guesses.count)
+        return max(0, 10 - guesses.count)
     }
     
     var hasGuessesLeft: Bool {
@@ -28,12 +28,17 @@ struct MultiplayerPlayer: Codable, Identifiable {
     var lastGuessResult: String? {
         return guesses.last?.result
     }
+    
+    init(name: String) {
+        self.name = name
+        self.joinedAt = Date()
+    }
 }
 
 struct MultiplayerGuess: Codable, Identifiable {
-    let id = UUID()
+    var id: String { artistName + "-\(timestamp.timeIntervalSince1970)" }
     let artistName: String
-    let timestamp = Date()
+    let timestamp: Date
     let result: String // "correct", "incorrect"
     let hints: [String: String] // Detailed hint results
     let artistImageURL: String? // Artist profile image URL
@@ -43,18 +48,19 @@ struct MultiplayerGuess: Codable, Identifiable {
         self.result = result
         self.hints = hints
         self.artistImageURL = artistImageURL
+        self.timestamp = Date()
     }
 }
 
 struct MultiplayerGameSession: Codable, Identifiable {
-    let id = UUID()
+    var id: String { inviteCode }
     let inviteCode: String
     let dateString: String
     let targetArtistId: String
     let targetArtistName: String
     var players: [MultiplayerPlayer] = []
     var currentPlayerIndex = 0
-    let createdAt = Date()
+    let createdAt: Date
     var isCompleted = false
     var winnerPlayerIndex: Int?
     var gameStarted = false
@@ -108,6 +114,14 @@ struct MultiplayerGameSession: Codable, Identifiable {
         }
         return "Unknown status"
     }
+    
+    init(inviteCode: String, dateString: String, targetArtistId: String, targetArtistName: String) {
+        self.inviteCode = inviteCode
+        self.dateString = dateString
+        self.targetArtistId = targetArtistId
+        self.targetArtistName = targetArtistName
+        self.createdAt = Date()
+    }
 }
 
 // MARK: - Multiplayer Game Manager
@@ -121,7 +135,7 @@ class MultiplayerGameManager: ObservableObject {
     @Published var isLoading = false
     @Published var connectionStatus: ConnectionStatus = .disconnected
     @Published var generatedCode: String = ""
-    @Published var currentPlayerId: UUID?
+    @Published var currentPlayerId: String?
     @Published var refreshID = UUID()
     
     enum ConnectionStatus {
@@ -187,7 +201,7 @@ class MultiplayerGameManager: ObservableObject {
         session.players.append(hostPlayer)
         session.currentPlayerIndex = 0
         
-        self.currentPlayerId = hostPlayer.id
+        self.currentPlayerId = hostPlayer.name
         
         do {
             try await firestoreService.createMultiplayerSession(session)
@@ -206,8 +220,8 @@ class MultiplayerGameManager: ObservableObject {
                 print("⏳ Waiting for second player to join...")
             }
             
-            print("🔄 Host: Setting up real-time listener for session: \(session.id.uuidString)")
-            await startListeningForUpdates(sessionId: session.id.uuidString)
+            print("🔄 Host: Setting up real-time listener for session: \(session.inviteCode)")
+            await startListeningForUpdates(sessionId: session.inviteCode)
             
             // Force refresh after a short delay to ensure Firebase sync
             try? await Task.sleep(for: .seconds(1))
@@ -265,11 +279,11 @@ class MultiplayerGameManager: ObservableObject {
             var updatedSession = existingSession
             updatedSession.players.append(newPlayer)
             
-            self.currentPlayerId = newPlayer.id
+            self.currentPlayerId = newPlayer.name
             
             print("👤 Player joining details:")
             print("   - Player name: \(playerName)")
-            print("   - Player ID: \(newPlayer.id)")
+            print("   - Player ID: \(newPlayer.name)")
             print("   - Total players after join: \(updatedSession.players.count)")
             print("   - Existing players: \(existingSession.players.map { $0.name })")
             
@@ -293,8 +307,8 @@ class MultiplayerGameManager: ObservableObject {
                 print("🎮 Joined multiplayer session: \(code)")
             }
             
-            print("🔄 Joiner: Setting up real-time listener for session: \(updatedSession.id.uuidString)")
-            await startListeningForUpdates(sessionId: updatedSession.id.uuidString)
+            print("🔄 Joiner: Setting up real-time listener for session: \(updatedSession.inviteCode)")
+            await startListeningForUpdates(sessionId: updatedSession.inviteCode)
             
             try? await Task.sleep(for: .seconds(1))
             await refreshSessionFromFirebase()
@@ -432,7 +446,7 @@ class MultiplayerGameManager: ObservableObject {
         Session: \(session.inviteCode)
         Players: \(session.players.count) (\(session.players.map { $0.name }.joined(separator: ", ")))
         Game Started: \(session.gameStarted)
-        My Player ID: \(currentPlayerId?.uuidString ?? "nil")
+        My Player ID: \(currentPlayerId ?? "nil")
         I'm in session (by name): \(isInSessionByName)
         I'm in session (by ID): \(isInSessionById)
         My name: \(playerName)
@@ -442,30 +456,30 @@ class MultiplayerGameManager: ObservableObject {
     
     // MARK: - Manual Refresh Functions
     func refreshSessionFromFirebase() async {
-        guard let sessionId = currentSession?.id.uuidString else { 
-            print("⚠️ No current session ID available for refresh")
+        guard let inviteCode = currentSession?.inviteCode else { 
+            print("⚠️ No current invite code available for refresh")
             return 
         }
         
-        print("🔄 Manually refreshing session from Firebase: \(sessionId)")
+        print("🔄 Manually refreshing session from Firebase: \(inviteCode)")
         
         do {
-            if let session = try await firestoreService.getMultiplayerSession(sessionId: sessionId) {
+            if let session = try await firestoreService.getMultiplayerSession(sessionId: inviteCode) {
                 await MainActor.run {
                     print("🔄 Manual refresh - Session state:")
                     print("   - Players: \(session.players.count)")
                     print("   - Player names: \(session.players.map { $0.name })")
                     print("   - Game started: \(session.gameStarted)")
                     print("   - Connection status before: \(self.connectionStatus)")
-                    print("   - My player ID before: \(self.currentPlayerId?.uuidString ?? "nil")")
+                    print("   - My player ID before: \(self.currentPlayerId ?? "nil")")
                     
                     self.currentSession = session
                     
                     // Restore player ID if needed
                     if self.currentPlayerId == nil || !session.players.contains(where: { $0.id == self.currentPlayerId }) {
                         if let myPlayer = session.players.first(where: { $0.name == self.playerName }) {
-                            self.currentPlayerId = myPlayer.id
-                            print("🔗 Manual refresh: Restored player ID: \(myPlayer.id)")
+                            self.currentPlayerId = myPlayer.name
+                            print("🔗 Manual refresh: Restored player ID: \(myPlayer.name)")
                         }
                     }
                     
@@ -480,16 +494,16 @@ class MultiplayerGameManager: ObservableObject {
                     self.refreshID = UUID()
                     
                     print("   - Connection status after: \(self.connectionStatus)")
-                    print("   - My player ID after: \(self.currentPlayerId?.uuidString ?? "nil")")
+                    print("   - My player ID after: \(self.currentPlayerId ?? "nil")")
                     print("✅ Manual refresh completed")
                 }
             } else {
                 // Session not found - try to recover
-                await handleSessionNotFound(sessionId: sessionId)
+                await handleSessionNotFound(sessionId: inviteCode)
             }
         } catch {
             print("❌ Manual refresh failed: \(error.localizedDescription)")
-            await handleSessionNotFound(sessionId: sessionId)
+            await handleSessionNotFound(sessionId: inviteCode)
         }
     }
     
@@ -511,13 +525,13 @@ class MultiplayerGameManager: ObservableObject {
                                 
                                 // Restore player ID
                                 if let myPlayer = session.players.first(where: { $0.name == self.playerName }) {
-                                    self.currentPlayerId = myPlayer.id
-                                    print("🔗 Recovered player ID: \(myPlayer.id)")
+                                    self.currentPlayerId = myPlayer.name
+                                    print("🔗 Recovered player ID: \(myPlayer.name)")
                                 }
                                 
                                 // Restart listener
                                 Task {
-                                    await self.startListeningForUpdates(sessionId: session.id.uuidString)
+                                    await self.startListeningForUpdates(sessionId: session.inviteCode)
                                 }
                                 
                                 if session.gameStarted && session.players.count == 2 {
@@ -551,6 +565,7 @@ class MultiplayerGameManager: ObservableObject {
         }
     }
     
+    // MARK: - Navigation / Timer checks
     func refreshSession() async {
         await refreshSessionFromFirebase()
     }
@@ -567,10 +582,10 @@ class MultiplayerGameManager: ObservableObject {
     
     // Check if current session is still valid
     func isSessionValid() async -> Bool {
-        guard let sessionId = currentSession?.id.uuidString else { return false }
+        guard let inviteCode = currentSession?.inviteCode else { return false }
         
         do {
-            let session = try await firestoreService.getMultiplayerSession(sessionId: sessionId)
+            let session = try await firestoreService.getMultiplayerSession(sessionId: inviteCode)
             return session != nil
         } catch {
             print("❌ Session validation failed: \(error.localizedDescription)")
@@ -628,7 +643,7 @@ class MultiplayerGameManager: ObservableObject {
                 print("   - Players: \(session.players.count)")
                 print("   - Player names: \(session.players.map { $0.name })")
                 print("   - Game started: \(session.gameStarted)")
-                print("   - Current player ID: \(self.currentPlayerId?.uuidString ?? "nil")")
+                print("   - Current player ID: \(self.currentPlayerId ?? "nil")")
                 
                 _ = self.currentSession // Store old session for potential future use
                 self.currentSession = session
@@ -636,8 +651,8 @@ class MultiplayerGameManager: ObservableObject {
                 // Ensure we maintain our player ID if we don't have one set or if it doesn't match
                 if self.currentPlayerId == nil || !session.players.contains(where: { $0.id == self.currentPlayerId }) {
                     if let myPlayer = session.players.first(where: { $0.name == self.playerName }) {
-                        self.currentPlayerId = myPlayer.id
-                        print("🔗 Restored/Updated player ID from session: \(myPlayer.id)")
+                        self.currentPlayerId = myPlayer.name
+                        print("🔗 Restored/Updated player ID from session: \(myPlayer.name)")
                     }
                 }
                 
@@ -878,12 +893,12 @@ class MultiplayerGameManager: ObservableObject {
     }
     
     private func autoRefreshSession() async {
-        guard let sessionId = currentSession?.id.uuidString else { return }
+        guard let inviteCode = currentSession?.inviteCode else { return }
         
-        print("🔄 Auto-refresh: Checking session \(sessionId)")
+        print("🔄 Auto-refresh: Checking session \(inviteCode)")
         
         do {
-            if let session = try await firestoreService.getMultiplayerSession(sessionId: sessionId) {
+            if let session = try await firestoreService.getMultiplayerSession(sessionId: inviteCode) {
                 await MainActor.run {
                     let oldStatus = self.connectionStatus
                     let oldPlayerCount = self.currentSession?.players.count ?? 0

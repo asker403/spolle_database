@@ -463,11 +463,11 @@ class FirestoreService: ObservableObject {
     
     // Create a new multiplayer session
     func createMultiplayerSession(_ session: MultiplayerGameSession) async throws {
-        print("🎮 Creating multiplayer session with code: \(session.inviteCode)")
+        print("   Creating multiplayer session with code: \(session.inviteCode)")
         
         let sessionData = try Firestore.Encoder().encode(session)
         try await db.collection("multiplayer_sessions")
-            .document(session.id.uuidString)
+            .document(session.inviteCode)
             .setData(sessionData)
         
         print("✅ Successfully created multiplayer session")
@@ -477,13 +477,11 @@ class FirestoreService: ObservableObject {
     func findMultiplayerSession(inviteCode: String) async throws -> MultiplayerGameSession? {
         print("🔍 Looking for multiplayer session with code: \(inviteCode)")
         
-        let query = db.collection("multiplayer_sessions")
-            .whereField("inviteCode", isEqualTo: inviteCode)
-            .whereField("isCompleted", isEqualTo: false)
-            .limit(to: 1)
-        
-        let snapshot = try await query.getDocuments()
-        guard let document = snapshot.documents.first else {
+        let document = try await db.collection("multiplayer_sessions")
+            .document(inviteCode)
+            .getDocument()
+            
+        guard document.exists else {
             print("⚠️ No multiplayer session found with code: \(inviteCode)")
             return nil
         }
@@ -499,7 +497,7 @@ class FirestoreService: ObservableObject {
         
         let sessionData = try Firestore.Encoder().encode(session)
         try await db.collection("multiplayer_sessions")
-            .document(session.id.uuidString)
+            .document(session.inviteCode)
             .setData(sessionData)
         
         print("✅ Successfully updated multiplayer session")

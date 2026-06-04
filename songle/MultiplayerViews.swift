@@ -110,7 +110,7 @@ struct MultiplayerSetupView: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.secondary)
                 
-                Text("👥 2 Players • 🎯 5 Guesses Each • 🎵 Same Song")
+                Text("👥 2 Players • 🎯 10 Guesses Each • 🎵 Same Song")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.blue)
                     .padding(.horizontal, 16)
@@ -730,7 +730,7 @@ struct MultiplayerGameView: View {
                         .cornerRadius(8)
                 }
                 
-                Text("\(player.remainingGuesses)/5 guesses left")
+                Text("\(player.remainingGuesses)/10 guesses left")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
             }
