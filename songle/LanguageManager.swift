@@ -109,6 +109,7 @@ struct LocalizedStrings {
         "guess_the_artist": "Guess the Artist",
         "challenge_yourself": "Challenge yourself with a new artist.",
         "start_the_game": "Start the Game",
+        "multiplayer": "Multiplayer",
         
         // Game View
         "enter_your_guess": "Enter your guess",
@@ -214,6 +215,7 @@ struct LocalizedStrings {
         "guess_the_artist": "Sanatçıyı Tahmin Et",
         "challenge_yourself": "Yeni bir sanatçıyla kendini test et.",
         "start_the_game": "Oyunu Başlat",
+        "multiplayer": "Çok Oyunculu",
         
         // Game View
         "enter_your_guess": "Tahmininizi girin",

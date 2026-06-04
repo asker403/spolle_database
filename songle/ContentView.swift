@@ -52,6 +52,7 @@ struct HomeView: View {
     @State private var showGameView = false
     @State private var showHelpSheet = false
     @State private var showLanguageSelection = false
+    @State private var showMultiplayerSetup = false
     
     @State private var isDailyGameCompleted = false
     @State private var gameInstanceId = UUID()
@@ -120,6 +121,34 @@ struct HomeView: View {
                                 .shadow(color: Color(red: 0.7, green: 0.3, blue: 1.0).opacity(0.3), radius: 10, x: 0, y: 5)
                             }
                             .padding(.horizontal, 40)
+
+                            // Multiplayer Button
+                            Button(action: {
+                                showMultiplayerSetup = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "person.2.fill")
+                                        .font(.system(size: 16, weight: .medium))
+                                    Text(languageManager.localizedString(for: "multiplayer"))
+                                        .font(.system(size: 18, weight: .semibold))
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 50)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 25)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [Color(red: 0.3, green: 0.3, blue: 0.9), Color(red: 0.6, green: 0.2, blue: 0.9)],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                )
+                                .shadow(color: Color(red: 0.3, green: 0.3, blue: 0.9).opacity(0.3), radius: 10, x: 0, y: 5)
+                            }
+                            .padding(.horizontal, 40)
+                            .padding(.top, 16)
                             
                             Spacer()
                         }
@@ -175,6 +204,9 @@ struct HomeView: View {
             .fullScreenCover(isPresented: $showGameView) {
                 GameView(isDailyGameCompleted: $isDailyGameCompleted, showGameView: $showGameView)
                     .id(gameInstanceId)
+            }
+            .fullScreenCover(isPresented: $showMultiplayerSetup) {
+                MultiplayerSetupView()
             }
             .sheet(isPresented: $showHelpSheet) {
                 HelpView()
