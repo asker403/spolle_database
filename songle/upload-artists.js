@@ -41,52 +41,64 @@ console.log(`📁 Using data source: ${dataSource}`);
 console.log(`📊 Found ${artists.length} artists to upload`);
 
 async function uploadArtists() {
-  const batch = db.batch();
+  const BATCH_SIZE = 400;
   let uploadCount = 0;
 
-  artists.forEach((artist, index) => {
-    // Clean up the data for Firestore with comprehensive field mapping
-    const cleanArtist = {
-      // Core required fields
-      isim: artist.isim,
-      populerlik: artist.populerlik,
-      cinsiyet: artist.cinsiyet || "Unknown",
-      resim_url: artist.resim_url,
-      audio_preview_url: artist.audio_preview_url,
-      genre: artist.genre || (artist.spotify_genres && artist.spotify_genres[0]) || "Pop",
-      ulke: artist.ulke || "Unknown",
-      cikis_yili: artist.cikis_yili || 2000,
-      tip: artist.tip || "Solo",
-      
-      // Spotify-specific fields (from new data structure)
-      ...(artist.spotify_id && { spotify_id: artist.spotify_id }),
-      ...(artist.spotify_popularity && { spotify_popularity: artist.spotify_popularity }),
-      ...(artist.spotify_followers && { spotify_followers: artist.spotify_followers }),
-      ...(artist.spotify_genres && { spotify_genres: artist.spotify_genres }),
-      
-      // Kworb rankings data
-      ...(artist.kworb_streams && { kworb_streams: artist.kworb_streams }),
-      
-      // Audio preview metadata
-      ...(artist.preview_track && { preview_track: artist.preview_track }),
-      ...(artist.preview_source && { preview_source: artist.preview_source }),
-      ...(artist.preview_album && { preview_album: artist.preview_album }),
-      ...(artist.track_popularity && { track_popularity: artist.track_popularity }),
-      
-      // Image metadata
-      ...(artist.image_source && { image_source: artist.image_source }),
-      
-      // Additional metadata for debugging/analytics
-      ...(artist.preview_market && { preview_market: artist.preview_market }),
-    };
+  for (let i = 0; i < artists.length; i += BATCH_SIZE) {
+    const chunk = artists.slice(i, i + BATCH_SIZE);
+    const batch = db.batch();
 
-    const docRef = db.collection("sanatcilar").doc(); // Otomatik ID
-    batch.set(docRef, cleanArtist);
-    uploadCount++;
-  });
+    chunk.forEach((artist) => {
+      // Clean up the data for Firestore with comprehensive field mapping
+      const cleanArtist = {
+        // Core required fields
+        isim: artist.isim,
+        populerlik: artist.populerlik,
+        cinsiyet: artist.cinsiyet || "Unknown",
+        resim_url: artist.resim_url,
+        audio_preview_url: artist.audio_preview_url,
+        genre: artist.genre || (artist.spotify_genres && artist.spotify_genres[0]) || "Pop",
+        ulke: artist.ulke || "Unknown",
+        cikis_yili: artist.cikis_yili || 2000,
+        tip: artist.tip || "Solo",
+        
+        // Spotify-specific fields (from new data structure)
+        ...(artist.spotify_id && { spotify_id: artist.spotify_id }),
+        ...(artist.spotify_popularity && { spotify_popularity: artist.spotify_popularity }),
+        ...(artist.spotify_followers && { spotify_followers: artist.spotify_followers }),
+        ...(artist.spotify_genres && { spotify_genres: artist.spotify_genres }),
+        
+        // Kworb rankings data
+        ...(artist.kworb_streams && { kworb_streams: artist.kworb_streams }),
+        
+        // Audio preview metadata
+        ...(artist.preview_track && { preview_track: artist.preview_track }),
+        ...(artist.preview_source && { preview_source: artist.preview_source }),
+        ...(artist.preview_album && { preview_album: artist.preview_album }),
+        ...(artist.track_popularity && { track_popularity: artist.track_popularity }),
+        
+        // Image metadata
+        ...(artist.image_source && { image_source: artist.image_source }),
+        
+        // Additional metadata for debugging/analytics
+        ...(artist.preview_market && { preview_market: artist.preview_market }),
+      };
 
-  console.log(`🚀 Uploading ${uploadCount} artists to Firestore...`);
-  await batch.commit();
+      // Generate deterministic document ID to prevent duplicate uploads
+      const docId = artist.spotify_id || artist.isim.toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+
+      const docRef = db.collection("sanatcilar").doc(docId);
+      batch.set(docRef, cleanArtist);
+      uploadCount++;
+    });
+
+    console.log(`🚀 Uploading batch of ${chunk.length} artists to Firestore...`);
+    await batch.commit();
+  }
   
   console.log("✅ Sanatçılar başarıyla yüklendi!");
   console.log(`📊 Total uploaded: ${uploadCount} artists`);
