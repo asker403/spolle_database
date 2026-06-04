@@ -1401,29 +1401,40 @@ def main():
     
     fetcher = SpotifyPriorityArtistDataFetcher()
     
-    # Ask user if they want to test with limited artists first
-    print("🧪 Would you like to test with a small number of artists first?")
-    test_response = input("Test with 10 artists? (y/N): ").strip().lower()
+    # Check if running in a non-interactive CI/CD environment
+    import sys
+    import os
+    is_non_interactive = os.environ.get("GITHUB_ACTIONS") == "true" or not sys.stdin.isatty()
     
-    if test_response in ['y', 'yes']:
-        print("\n🧪 Testing with first 10 artists...")
-        artists_data = fetcher.process_all_artists(limit=10)
-        if artists_data:
-            fetcher.save_to_json(artists_data, 'test_spotify_artists.json')
-            print(f"\n✅ Test completed! Check 'test_spotify_artists.json'")
-            
-            # Ask if user wants to continue with full dataset
-            full_response = input("\nContinue with all ~500 artists? (y/N): ").strip().lower()
-            if full_response in ['y', 'yes']:
-                print("\n🚀 Processing all artists...")
-                artists_data = fetcher.process_all_artists()
-                if artists_data:
-                    fetcher.save_to_json(artists_data)
-    else:
-        print("\n🚀 Processing all artists...")
+    if is_non_interactive:
+        print("\n🚀 Non-interactive/CI environment detected. Processing all artists...")
         artists_data = fetcher.process_all_artists()
         if artists_data:
             fetcher.save_to_json(artists_data)
+    else:
+        # Ask user if they want to test with limited artists first
+        print("🧪 Would you like to test with a small number of artists first?")
+        test_response = input("Test with 10 artists? (y/N): ").strip().lower()
+        
+        if test_response in ['y', 'yes']:
+            print("\n🧪 Testing with first 10 artists...")
+            artists_data = fetcher.process_all_artists(limit=10)
+            if artists_data:
+                fetcher.save_to_json(artists_data, 'test_spotify_artists.json')
+                print(f"\n✅ Test completed! Check 'test_spotify_artists.json'")
+                
+                # Ask if user wants to continue with full dataset
+                full_response = input("\nContinue with all ~500 artists? (y/N): ").strip().lower()
+                if full_response in ['y', 'yes']:
+                    print("\n🚀 Processing all artists...")
+                    artists_data = fetcher.process_all_artists()
+                    if artists_data:
+                        fetcher.save_to_json(artists_data)
+        else:
+            print("\n🚀 Processing all artists...")
+            artists_data = fetcher.process_all_artists()
+            if artists_data:
+                fetcher.save_to_json(artists_data)
     
     print("\n🎉 Spotify-priority data collection completed!")
 
