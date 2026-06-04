@@ -115,12 +115,10 @@ class GameManager: ObservableObject {
         }
         
         // Check if we already have a game for today
-        let descriptor = FetchDescriptor<GameState>(
-            predicate: #Predicate<GameState> { $0.dateString == today }
-        )
-        
         do {
-            let existingGames = try modelContext.fetch(descriptor)
+            let descriptor = FetchDescriptor<GameState>()
+            let allGames = try modelContext.fetch(descriptor)
+            let existingGames = allGames.filter { $0.dateString.hasPrefix(today) }
             print("📋 Found \(existingGames.count) existing games for today")
             
             if let existingGame = existingGames.first {
@@ -816,24 +814,31 @@ class GameManager: ObservableObject {
                        currentGame.currentGuesses.isEmpty,
                        !self.allArtists.isEmpty {
                         
-                        // Check if the current target artist exists in our new artist list
-                        if let existingTarget = self.targetArtist,
-                           self.allArtists.contains(where: { $0.name.lowercased() == existingTarget.name.lowercased() }) {
-                            print("✅ Existing target artist '\(existingTarget.name)' found in Firestore data, updating with audio preview")
-                            // Update the target with the Firestore version for better data (including audio preview)
-                            if let firestoreVersion = self.allArtists.first(where: { $0.name.lowercased() == existingTarget.name.lowercased() }) {
-                                print("🎵 Firestore version has previewURL: \(firestoreVersion.previewURL ?? "nil")")
-                                self.targetArtist = firestoreVersion
-                                currentGame.targetArtistId = firestoreVersion.id
+                        // Check if the current target artist exists
+                        if let existingTarget = self.targetArtist {
+                            let fallbackIds = ["taylor-swift", "drake", "bts", "billie-eilish", "ed-sheeran", "ariana-grande", "imagine-dragons", "dua-lipa", "bad-bunny", "blackpink"]
+                            
+                            if fallbackIds.contains(existingTarget.id) {
+                                // Target was a fallback artist, replace it with a real Firestore artist
+                                print("🆕 Replacing fallback target '\(existingTarget.name)' with a real Firestore artist")
+                                let randomFirestoreArtist = self.allArtists.randomElement()!
+                                self.targetArtist = randomFirestoreArtist
+                                currentGame.targetArtistId = randomFirestoreArtist.id
                                 do {
                                     try self.modelContext.save()
-                                    print("🔄 Updated existing target with Firestore data: \(firestoreVersion.name)")
+                                    print("✅ Set new game target to: \(randomFirestoreArtist.name)")
                                 } catch {
-                                    print("❌ Error updating target with Firestore data: \(error)")
+                                    print("❌ Error setting new game target: \(error)")
+                                }
+                            } else {
+                                // Target is already a real Firestore artist, update the reference to include full details (like audio previewURL)
+                                if let firestoreVersion = self.allArtists.first(where: { $0.id == existingTarget.id }) {
+                                    print("✅ Existing Firestore target '\(firestoreVersion.name)' found, updating reference")
+                                    self.targetArtist = firestoreVersion
                                 }
                             }
-                        } else if self.targetArtist == nil {
-                            // Only set a new target if we don't have one (truly new game)
+                        } else {
+                            // Truly new game with no target set yet
                             print("🆕 No existing target found, setting new Firestore target for fresh game")
                             let randomFirestoreArtist = self.allArtists.randomElement()!
                             currentGame.targetArtistId = randomFirestoreArtist.id
@@ -845,8 +850,6 @@ class GameManager: ObservableObject {
                             } catch {
                                 print("❌ Error setting new game target: \(error)")
                             }
-                        } else {
-                            print("ℹ️ Existing target '\(self.targetArtist?.name ?? "unknown")' not found in Firestore data, but keeping it for consistency")
                         }
                     }
                 } else {
@@ -984,10 +987,9 @@ class GameManager: ObservableObject {
         
         // Delete only today's games to start fresh
         do {
-            let descriptor = FetchDescriptor<GameState>(
-                predicate: #Predicate<GameState> { $0.dateString == today }
-            )
-            let todaysGames = try modelContext.fetch(descriptor)
+            let descriptor = FetchDescriptor<GameState>()
+            let allGames = try modelContext.fetch(descriptor)
+            let todaysGames = allGames.filter { $0.dateString.hasPrefix(today) }
             
             for game in todaysGames {
                 modelContext.delete(game)
