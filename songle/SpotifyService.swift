@@ -24,6 +24,8 @@ class SpotifyService: ObservableObject {
     @Published var isAuthenticated = false
     private var accessToken: String?
     private var tokenExpiryDate: Date?
+    private var lastRequestTime: Date = Date(timeIntervalSince1970: 0)
+    private let minimumRequestInterval: TimeInterval = 0.1 // 100ms between requests
     
     private init() {
         // Check for existing credentials on startup
@@ -124,6 +126,30 @@ class SpotifyService: ObservableObject {
         }
     }
     
+    // MARK: - Rate Limiting Helper
+    private func waitForRateLimit() async {
+        let timeSinceLastRequest = Date().timeIntervalSince(lastRequestTime)
+        if timeSinceLastRequest < minimumRequestInterval {
+            let waitTime = minimumRequestInterval - timeSinceLastRequest
+            print("⏱️ Rate limiting: waiting \(Int(waitTime * 1000))ms")
+            try? await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
+        }
+        lastRequestTime = Date()
+    }
+    
+    private func handleRateLimitResponse(data: Data, response: URLResponse) async -> Bool {
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 429 {
+            print("🚫 Rate limited (429), waiting before retry...")
+            // Check for Retry-After header
+            let retryAfter = httpResponse.allHeaderFields["Retry-After"] as? String
+            let waitTime = TimeInterval(retryAfter ?? "1") ?? 1.0
+            print("⏳ Waiting \(waitTime) seconds before retry")
+            try? await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
+            return true
+        }
+        return false
+    }
+    
     // MARK: - Artist Search
     func searchArtists(query: String, limit: Int = 20) async -> [SpotifyArtist] {
         guard !query.isEmpty else { return [] }
@@ -135,6 +161,8 @@ class SpotifyService: ObservableObject {
         
         guard let token = accessToken else { return [] }
         
+        await waitForRateLimit()
+        
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let urlString = "\(baseURL)/search?q=\(encodedQuery)&type=artist&limit=\(limit)"
         
@@ -143,14 +171,27 @@ class SpotifyService: ObservableObject {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let searchResponse = try JSONDecoder().decode(SpotifySearchResponse.self, from: data)
-            return searchResponse.artists.items
-        } catch {
-            print("❌ Spotify search error: \(error)")
-            return []
+        var retryCount = 0
+        while retryCount < 3 {
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                if await handleRateLimitResponse(data: data, response: response) {
+                    retryCount += 1
+                    continue
+                }
+                
+                let searchResponse = try JSONDecoder().decode(SpotifySearchResponse.self, from: data)
+                return searchResponse.artists.items
+            } catch {
+                print("❌ Spotify search error (attempt \(retryCount + 1)): \(error)")
+                retryCount += 1
+                if retryCount < 3 {
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
+                }
+            }
         }
+        return []
     }
     
     // MARK: - Get Artists by Genre
@@ -171,19 +212,34 @@ class SpotifyService: ObservableObject {
     func getArtistDetails(id: String) async -> SpotifyArtistDetails? {
         guard let token = accessToken else { return nil }
         
+        await waitForRateLimit()
+        
         guard let url = URL(string: "\(baseURL)/artists/\(id)") else { return nil }
         
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let artistDetails = try JSONDecoder().decode(SpotifyArtistDetails.self, from: data)
-            return artistDetails
-        } catch {
-            print("❌ Error fetching artist details: \(error)")
-            return nil
+        var retryCount = 0
+        while retryCount < 3 {
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                if await handleRateLimitResponse(data: data, response: response) {
+                    retryCount += 1
+                    continue
+                }
+                
+                let artistDetails = try JSONDecoder().decode(SpotifyArtistDetails.self, from: data)
+                return artistDetails
+            } catch {
+                print("❌ Error fetching artist details (attempt \(retryCount + 1)): \(error)")
+                retryCount += 1
+                if retryCount < 3 {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
+            }
         }
+        return nil
     }
     
     // MARK: - Get Artist Top Tracks (for audio preview)
@@ -194,41 +250,92 @@ class SpotifyService: ObservableObject {
             return [] 
         }
         
-        guard let url = URL(string: "\(baseURL)/artists/\(artistId)/top-tracks?market=\(market)") else { 
-            print("❌ Invalid URL for top tracks")
-            return [] 
+        // Reduced markets to prevent rate limiting - try only essential ones
+        let markets = [market == "US" ? "US" : market, "US", "GB"]
+        var allTracks: [SpotifyTrack] = []
+        
+        for marketCode in markets {
+            // Rate limiting: wait between requests
+            await waitForRateLimit()
+            
+            guard let url = URL(string: "\(baseURL)/artists/\(artistId)/top-tracks?market=\(marketCode)") else { 
+                continue
+            }
+            
+            print("🌐 Requesting for market \(marketCode): \(url.absoluteString)")
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            
+            var retryCount = 0
+            while retryCount < 2 { // Reduced retries
+                do {
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    
+                    if let httpResponse = response as? HTTPURLResponse {
+                        print("📡 Response status for \(marketCode): \(httpResponse.statusCode)")
+                        
+                        // Handle rate limiting
+                        if httpResponse.statusCode == 429 {
+                            if await handleRateLimitResponse(data: data, response: response) {
+                                retryCount += 1
+                                continue
+                            }
+                        }
+                    }
+                    
+                    let topTracksResponse = try JSONDecoder().decode(SpotifyTopTracksResponse.self, from: data)
+                    let tracksWithPreviews = topTracksResponse.tracks.filter { $0.preview_url != nil }
+                    
+                    print("🎶 Found \(topTracksResponse.tracks.count) top tracks for \(marketCode)")
+                    print("🎧 Tracks with preview in \(marketCode): \(tracksWithPreviews.count)")
+                    
+                    // Add tracks that have preview URLs
+                    for track in tracksWithPreviews {
+                        if !allTracks.contains(where: { $0.id == track.id }) {
+                            allTracks.append(track)
+                            print("   ✅ Added preview: \(track.name) from \(marketCode)")
+                        }
+                    }
+                    
+                    // If we found previews in this market, prioritize them
+                    if !tracksWithPreviews.isEmpty {
+                        let finalTracks = tracksWithPreviews + topTracksResponse.tracks.filter { $0.preview_url == nil }
+                        print("✅ Using tracks from \(marketCode) market with \(tracksWithPreviews.count) preview(s)")
+                        return finalTracks
+                    }
+                    
+                    break // Success, try next market
+                    
+                } catch {
+                    print("❌ Error fetching top tracks for \(marketCode) (attempt \(retryCount + 1)): \(error)")
+                    retryCount += 1
+                    if retryCount < 2 {
+                        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second between retries
+                    }
+                }
+            }
         }
         
-        print("🌐 Requesting: \(url.absoluteString)")
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        print("🎵 Collected \(allTracks.count) total tracks with previews across \(markets.count) markets")
+        return allTracks
+    }
+    
+    // MARK: - Enhanced Top Tracks with Preview Priority  
+    func getTopTracksWithPreviewPriority(artistId: String) async -> [SpotifyTrack] {
+        print("🎯 Getting tracks with preview priority for artist: \(artistId)")
         
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            if let httpResponse = response as? HTTPURLResponse {
-                print("📡 Response status: \(httpResponse.statusCode)")
-            }
-            
-            let topTracksResponse = try JSONDecoder().decode(SpotifyTopTracksResponse.self, from: data)
-            print("🎶 Found \(topTracksResponse.tracks.count) top tracks")
-            
-            let tracksWithPreviews = topTracksResponse.tracks.filter { $0.preview_url != nil }
-            print("🎧 Tracks with preview: \(tracksWithPreviews.count)")
-            
-            for track in tracksWithPreviews.prefix(3) {
-                print("   🎵 \(track.name) - Preview: \(track.preview_url ?? "None")")
-            }
-            
-            return topTracksResponse.tracks
-        } catch {
-            print("❌ Error fetching top tracks: \(error)")
-            if let data = try? await URLSession.shared.data(for: request).0,
-               let errorString = String(data: data, encoding: .utf8) {
-                print("❌ Response body: \(errorString)")
-            }
-            return []
-        }
+        let tracks = await getArtistTopTracks(artistId: artistId)
+        
+        // Separate tracks with and without previews
+        let tracksWithPreviews = tracks.filter { $0.preview_url != nil }
+        let tracksWithoutPreviews = tracks.filter { $0.preview_url == nil }
+        
+        print("📊 Total tracks: \(tracks.count)")
+        print("🎧 With previews: \(tracksWithPreviews.count)")
+        print("🚫 Without previews: \(tracksWithoutPreviews.count)")
+        
+        // Return preview tracks first, then others
+        return tracksWithPreviews + tracksWithoutPreviews
     }
     
     // MARK: - Get Artist Image URL
@@ -245,281 +352,16 @@ class SpotifyService: ObservableObject {
         // Get the image URL
         let imageURL = getArtistImageURL(artist: artist)
         
-        // Get top tracks for preview
-        let topTracks = await getArtistTopTracks(artistId: artist.id)
-        let previewURL = topTracks.first(where: { $0.preview_url != nil })?.preview_url
+        // Get top tracks with preview priority
+        let topTracks = await getTopTracksWithPreviewPriority(artistId: artist.id)
+        
+        // Find the first track with a preview, prioritizing more popular ones
+        let tracksWithPreviews = topTracks.filter { $0.preview_url != nil }
+        let previewURL = tracksWithPreviews.first?.preview_url
+        
+        print("🎵 searchArtistWithDetails for \(name): Found \(tracksWithPreviews.count) tracks with previews")
         
         return (artist: artist, imageURL: imageURL, previewURL: previewURL)
-    }
-    
-    // MARK: - Enhanced Artist Data Fetching
-    func getEnhancedArtistData(name: String) async -> Artist? {
-        print("🔍 Fetching enhanced data for: \(name)")
-        
-        // First, search for the artist
-        let artists = await searchArtists(query: name, limit: 1)
-        guard let spotifyArtist = artists.first else { 
-            print("❌ Artist not found: \(name)")
-            return nil 
-        }
-        
-        // Get detailed artist information
-        guard let artistDetails = await getArtistDetails(id: spotifyArtist.id) else {
-            print("❌ Failed to get artist details for: \(name)")
-            return spotifyArtist.toArtist()
-        }
-        
-        // Get artist's albums to find debut year
-        let debutYear = await getArtistDebutYear(artistId: spotifyArtist.id)
-        
-        // Get artist's country from their albums/markets
-        let country = await getArtistCountry(artistId: spotifyArtist.id, artistName: name)
-        
-        // Enhanced gender detection
-        let gender = enhancedGenderDetection(artistName: name, genres: artistDetails.genres)
-        
-        // Get image and preview
-        let imageURL = getArtistImageURL(artist: spotifyArtist)
-        let topTracks = await getArtistTopTracks(artistId: spotifyArtist.id)
-        let previewURL = topTracks.first(where: { $0.preview_url != nil })?.preview_url
-        
-        print("✅ Enhanced data for \(name): Country=\(country), Debut=\(debutYear), Gender=\(gender)")
-        
-        return Artist(
-            id: "spotify-\(spotifyArtist.id)",
-            name: spotifyArtist.name,
-            gender: gender,
-            country: country,
-            debutYear: debutYear,
-            genre: spotifyArtist.primaryGenre,
-            isSolo: determineSoloStatus(name: name, genres: artistDetails.genres),
-            spotifyPopularity: spotifyArtist.popularity,
-            imageURL: imageURL,
-            previewURL: previewURL,
-            spotifyId: spotifyArtist.id
-        )
-    }
-    
-    // MARK: - Get Artist Albums for Debut Year
-    func getArtistAlbums(artistId: String) async -> [SpotifyAlbum] {
-        guard let token = accessToken else { return [] }
-        
-        guard let url = URL(string: "\(baseURL)/artists/\(artistId)/albums?include_groups=album,single&market=US&limit=50") else { return [] }
-        
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let albumsResponse = try JSONDecoder().decode(SpotifyAlbumsResponse.self, from: data)
-            return albumsResponse.items
-        } catch {
-            print("❌ Error fetching albums: \(error)")
-            return []
-        }
-    }
-    
-    func getArtistDebutYear(artistId: String) async -> Int {
-        let albums = await getArtistAlbums(artistId: artistId)
-        
-        // Find the earliest release date
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        
-        var earliestYear = Calendar.current.component(.year, from: Date())
-        
-        for album in albums {
-            if let releaseDate = dateFormatter.date(from: album.release_date) {
-                let year = Calendar.current.component(.year, from: releaseDate)
-                if year < earliestYear {
-                    earliestYear = year
-                }
-            } else if album.release_date.count >= 4,
-                      let year = Int(String(album.release_date.prefix(4))) {
-                if year < earliestYear {
-                    earliestYear = year
-                }
-            }
-        }
-        
-        return earliestYear
-    }
-    
-    // MARK: - Enhanced Country Detection
-    func getArtistCountry(artistId: String, artistName: String) async -> String {
-        // Try to determine country from various sources
-        
-        // 1. Check if artist name contains obvious country indicators
-        let countryFromName = extractCountryFromName(artistName)
-        if countryFromName != "Unknown" {
-            return countryFromName
-        }
-        
-        // 2. Use a curated database for well-known artists
-        let knownCountry = getKnownArtistCountry(artistName)
-        if knownCountry != "Unknown" {
-            return knownCountry
-        }
-        
-        // 3. Analyze markets where their music is most popular
-        // This is a simplified approach - in reality, you'd need market analysis
-        return "Unknown"
-    }
-    
-    private func extractCountryFromName(_ name: String) -> String {
-        let nameWords = name.lowercased().components(separatedBy: .whitespacesAndNewlines.union(.punctuationCharacters))
-        
-        let countryIndicators: [String: String] = [
-            "american": "United States",
-            "british": "United Kingdom",
-            "english": "United Kingdom", 
-            "irish": "Ireland",
-            "scottish": "United Kingdom",
-            "welsh": "United Kingdom",
-            "canadian": "Canada",
-            "australian": "Australia",
-            "french": "France",
-            "german": "Germany",
-            "italian": "Italy",
-            "spanish": "Spain",
-            "swedish": "Sweden",
-            "norwegian": "Norway",
-            "danish": "Denmark",
-            "korean": "South Korea",
-            "japanese": "Japan",
-            "chinese": "China"
-        ]
-        
-        for word in nameWords {
-            if let country = countryIndicators[word] {
-                return country
-            }
-        }
-        
-        return "Unknown"
-    }
-    
-    private func getKnownArtistCountry(_ name: String) -> String {
-        // Curated database of well-known artists and their countries
-        let artistCountries: [String: String] = [
-            "taylor swift": "United States",
-            "ed sheeran": "United Kingdom", 
-            "adele": "United Kingdom",
-            "drake": "Canada",
-            "the weeknd": "Canada",
-            "bruno mars": "United States",
-            "ariana grande": "United States",
-            "billie eilish": "United States",
-            "david guetta": "France",
-            "calvin harris": "United Kingdom",
-            "martin garrix": "Netherlands",
-            "avicii": "Sweden",
-            "swedish house mafia": "Sweden",
-            "daft punk": "France",
-            "deadmau5": "Canada",
-            "skrillex": "United States",
-            "tiësto": "Netherlands",
-            "diplo": "United States",
-            "zedd": "Germany",
-            "alan walker": "Norway",
-            "marshmello": "United States",
-            "chainsmokers": "United States",
-            "eminem": "United States",
-            "kanye west": "United States",
-            "kendrick lamar": "United States",
-            "j. cole": "United States",
-            "travis scott": "United States",
-            "post malone": "United States",
-            "lil nas x": "United States",
-            "dua lipa": "United Kingdom",
-            "olivia rodrigo": "United States",
-            "harry styles": "United Kingdom",
-            "shawn mendes": "Canada",
-            "justin bieber": "Canada",
-            "selena gomez": "United States",
-            "rihanna": "Barbados",
-            "beyoncé": "United States",
-            "lady gaga": "United States",
-            "katy perry": "United States",
-            "coldplay": "United Kingdom",
-            "imagine dragons": "United States",
-            "maroon 5": "United States",
-            "onerepublic": "United States",
-            "u2": "Ireland",
-            "radiohead": "United Kingdom",
-            "queen": "United Kingdom",
-            "the beatles": "United Kingdom",
-            "pink floyd": "United Kingdom",
-            "led zeppelin": "United Kingdom",
-            "ac/dc": "Australia",
-            "metallica": "United States",
-            "guns n' roses": "United States",
-            "nirvana": "United States",
-            "red hot chili peppers": "United States",
-            "foo fighters": "United States",
-            "green day": "United States",
-            "linkin park": "United States",
-            "bts": "South Korea",
-            "blackpink": "South Korea",
-            "twice": "South Korea",
-            "bad bunny": "Puerto Rico",
-            "j balvin": "Colombia",
-            "shakira": "Colombia",
-            "manu chao": "France",
-            "stromae": "Belgium",
-            "sia": "Australia",
-            "tame impala": "Australia",
-            "flume": "Australia",
-            "kygo": "Norway",
-            "robyn": "Sweden",
-            "abba": "Sweden",
-            "björk": "Iceland",
-            "sigur rós": "Iceland",
-            "madonna": "United States",
-            "michael jackson": "United States",
-            "prince": "United States",
-            "whitney houston": "United States",
-            "mariah carey": "United States",
-            "celine dion": "Canada",
-            "alanis morissette": "Canada"
-        ]
-        
-        let lowercaseName = name.lowercased()
-        return artistCountries[lowercaseName] ?? "Unknown"
-    }
-    
-    // MARK: - Enhanced Gender Detection
-    private func enhancedGenderDetection(artistName: String, genres: [String]) -> String {
-        let lowercaseName = artistName.lowercased()
-        
-        // Check for obvious group indicators first
-        let groupIndicators = ["band", "boys", "girls", "sisters", "brothers", "crew", "collective", "ensemble", "orchestra", "choir", "duo", "trio", "quartet", "quintet"]
-        for indicator in groupIndicators {
-            if lowercaseName.contains(indicator) {
-                return "Group"
-            }
-        }
-        
-        // Check for conjunction words indicating multiple people
-        if lowercaseName.contains(" & ") || lowercaseName.contains(" and ") || lowercaseName.contains(" + ") {
-            return "Group"
-        }
-        
-        // Genre-based hints for groups
-        if genres.contains(where: { $0.lowercased().contains("metal") || $0.lowercased().contains("rock") }) {
-            // Many metal/rock acts are bands
-            if lowercaseName.contains("the ") {
-                return "Group"
-            }
-        }
-        
-        // Enhanced name checking with more comprehensive lists
-        return estimateGenderFromName(artistName)
-    }
-    
-    private func determineSoloStatus(name: String, genres: [String]) -> Bool {
-        let gender = enhancedGenderDetection(artistName: name, genres: genres)
-        return gender != "Group"
     }
 }
 
@@ -591,19 +433,6 @@ struct SpotifyExternalUrls: Codable {
     let spotify: String
 }
 
-// MARK: - Album Models for Enhanced Data
-struct SpotifyAlbumsResponse: Codable {
-    let items: [SpotifyAlbum]
-}
-
-struct SpotifyAlbum: Codable {
-    let id: String
-    let name: String
-    let release_date: String
-    let album_type: String
-    let total_tracks: Int
-}
-
 // MARK: - Conversion Extensions
 extension SpotifyArtist {
     func toArtist() -> Artist {
@@ -622,8 +451,8 @@ extension SpotifyArtist {
         return Artist(
             id: artistId,
             name: self.name,
-            gender: estimateGenderFromName(name: self.name), // Updated function name
-            country: "Unknown", // Will be enhanced with new function
+            gender: estimateGender(name: self.name), // Basic gender estimation
+            country: "Unknown", // Spotify doesn't provide country in basic search
             debutYear: estimateDebutYear(popularity: self.popularity), // Estimate based on popularity
             genre: self.primaryGenre,
             isSolo: isSolo,
@@ -634,8 +463,8 @@ extension SpotifyArtist {
         )
     }
     
-    private func estimateGenderFromName(name: String) -> String {
-        // Enhanced gender detection with comprehensive name lists
+    private func estimateGender(name: String) -> String {
+        // Basic heuristic based on common patterns
         let lowercaseName = name.lowercased()
         
         // Group indicators
@@ -645,17 +474,15 @@ extension SpotifyArtist {
            lowercaseName.contains("sisters") ||
            lowercaseName.contains("brothers") ||
            lowercaseName.contains(" & ") ||
-           lowercaseName.contains(" and ") ||
-           lowercaseName.contains("crew") ||
-           lowercaseName.contains("collective") {
+           lowercaseName.contains(" and ") {
             return "Group"
         }
         
-        // Extended male names list
-        let maleNames = ["john", "michael", "david", "james", "robert", "william", "richard", "thomas", "charles", "christopher", "daniel", "matthew", "anthony", "mark", "donald", "steven", "paul", "andrew", "joshua", "kenneth", "kevin", "brian", "george", "edward", "ronald", "timothy", "jason", "jeffrey", "ryan", "jacob", "gary", "nicholas", "eric", "jonathan", "stephen", "larry", "justin", "scott", "brandon", "benjamin", "samuel", "frank", "gregory", "raymond", "alexander", "patrick", "jack", "dennis", "jerry", "tyler", "aaron", "jose", "henry", "adam", "douglas", "nathan", "peter", "zachary", "noah", "carl", "arthur", "harold", "jordan", "lawrence", "ralph", "billy", "wayne", "roy", "eugene", "louis", "albert", "vincent", "mason", "liam", "elijah", "lucas", "sebastian", "aiden", "joseph", "carter", "owen", "wyatt", "luke", "jayden", "dylan", "grayson", "levi", "isaac", "gabriel", "julian", "mateo", "jaxon", "lincoln", "caleb", "asher", "theodore", "eli", "easton", "evan", "adrian", "colton", "christian", "greyson", "connor", "landon", "gavin", "joel", "miles", "kanye", "drake", "eminem", "justin", "bruno", "ed", "shawn", "post", "travis", "kendrick", "cole", "mac", "lil", "xxxtentacion", "juice", "calvin", "martin", "alan", "marshmello", "skrillex", "diplo", "zedd", "tiësto", "avicii", "deadmau5", "kygo", "flume", "miguel", "usher", "chris", "frank", "weeknd", "abel", "harry", "zayn", "louis", "niall", "liam"]
+        // Common male names
+        let maleNames = ["john", "michael", "david", "james", "robert", "william", "richard", "thomas", "charles", "christopher", "daniel", "matthew", "anthony", "mark", "donald", "steven", "paul", "andrew", "joshua", "kenneth", "kevin", "brian", "george", "edward", "ronald", "timothy", "jason", "jeffrey", "ryan", "jacob", "gary", "nicholas", "eric", "jonathan", "stephen", "larry", "justin", "scott", "brandon", "benjamin", "samuel", "frank", "gregory", "raymond", "alexander", "patrick", "jack", "dennis", "jerry", "tyler", "aaron", "jose", "henry", "adam", "douglas", "nathan", "peter", "zachary", "noah", "carl", "arthur", "harold", "jordan", "lawrence", "ralph", "billy", "wayne", "roy", "eugene", "louis", "albert", "vincent", "mason", "mason", "liam", "noah", "william", "elijah", "james", "benjamin", "lucas", "henry", "alexander", "jackson", "sebastian", "aiden", "matthew", "samuel", "david", "joseph", "carter", "owen", "wyatt", "john", "jack", "luke", "jayden", "dylan", "grayson", "levi", "isaac", "gabriel", "julian", "mateo", "anthony", "jaxon", "lincoln", "joshua", "christopher", "andrew", "theodore", "caleb", "ryan", "asher", "nathan", "thomas", "leo", "isaiah", "charles", "josiah", "angel", "hunter", "eli", "easton", "evan", "aaron", "adrian", "colton", "jordan", "christian", "robert", "greyson", "jonathan", "connor", "landon", "gavin", "tyler", "jose", "joel", "miles", "ralph", "kanye", "drake", "eminem", "justin", "bruno", "ed", "shawn", "post", "travis", "tyler", "kendrick", "j.", "lil", "xxxtentacion", "juice", "mac"]
         
-        // Extended female names list  
-        let femaleNames = ["mary", "patricia", "jennifer", "linda", "elizabeth", "barbara", "susan", "jessica", "sarah", "karen", "nancy", "lisa", "betty", "helen", "sandra", "donna", "carol", "ruth", "sharon", "michelle", "laura", "kimberly", "deborah", "dorothy", "amy", "angela", "ashley", "brenda", "emma", "olivia", "cynthia", "marie", "janet", "catherine", "frances", "christine", "samantha", "debra", "rachel", "carolyn", "virginia", "maria", "heather", "diane", "julie", "joyce", "victoria", "kelly", "christina", "joan", "evelyn", "lauren", "judith", "megan", "cheryl", "andrea", "hannah", "jacqueline", "martha", "gloria", "sara", "janice", "julia", "kathryn", "alice", "teresa", "doris", "jane", "charlotte", "rebecca", "amelia", "ava", "sophia", "isabella", "mia", "harper", "camila", "gianna", "abigail", "luna", "ella", "sofia", "emily", "avery", "mila", "scarlett", "eleanor", "madison", "layla", "penelope", "aria", "chloe", "grace", "ellie", "nora", "hazel", "zoey", "riley", "lily", "aurora", "violet", "nova", "emilia", "zoe", "stella", "everly", "taylor", "rihanna", "beyonce", "beyoncé", "ariana", "selena", "demi", "katy", "lady", "adele", "billie", "lana", "lorde", "sia", "pink", "shakira", "madonna", "cher", "whitney", "mariah", "celine", "alicia", "nicki", "gaga", "swift", "grande", "eilish", "del", "rey", "dua", "lipa", "olivia", "rodrigo", "camila", "cabello", "halsey", "kesha", "miley", "cyrus", "britney", "spears", "christina", "aguilera", "alicia", "keys", "janet", "jackson", "lauryn", "hill", "amy", "winehouse", "björk", "robyn", "grimes", "fka", "twigs", "solange", "jhené", "aiko", "sza", "lianne", "la", "havas", "kali", "uchis"]
+        // Common female names  
+        let femaleNames = ["mary", "patricia", "jennifer", "linda", "elizabeth", "barbara", "susan", "jessica", "sarah", "karen", "nancy", "lisa", "betty", "helen", "sandra", "donna", "carol", "ruth", "sharon", "michelle", "laura", "sarah", "kimberly", "deborah", "dorothy", "lisa", "nancy", "karen", "betty", "helen", "sandra", "donna", "carol", "ruth", "sharon", "michelle", "laura", "sarah", "kimberly", "deborah", "dorothy", "amy", "angela", "ashley", "brenda", "emma", "olivia", "cynthia", "marie", "janet", "catherine", "frances", "christine", "samantha", "debra", "rachel", "carolyn", "janet", "virginia", "maria", "heather", "diane", "julie", "joyce", "victoria", "kelly", "christina", "joan", "evelyn", "lauren", "judith", "megan", "cheryl", "andrea", "hannah", "jacqueline", "martha", "gloria", "sara", "janice", "julia", "kathryn", "alice", "teresa", "doris", "sara", "jane", "charlotte", "rebecca", "olivia", "emma", "amelia", "ava", "sophia", "isabella", "mia", "evelyn", "harper", "camila", "gianna", "abigail", "luna", "ella", "elizabeth", "sofia", "emily", "avery", "mila", "scarlett", "eleanor", "madison", "layla", "penelope", "aria", "chloe", "grace", "ellie", "nora", "hazel", "zoey", "riley", "victoria", "lily", "aurora", "violet", "nova", "hannah", "emilia", "zoe", "stella", "everly", "taylor", "rihanna", "beyonce", "ariana", "selena", "demi", "katy", "lady", "adele", "billie", "lana", "lorde", "sia", "pink", "shakira", "madonna", "cher", "whitney", "mariah", "celine", "alicia", "nicki", "gaga", "swift"]
         
         // Check if any part of the name matches known names
         let nameWords = lowercaseName.components(separatedBy: .whitespacesAndNewlines.union(.punctuationCharacters)).filter { !$0.isEmpty }
@@ -693,44 +520,4 @@ extension SpotifyArtist {
             return Int.random(in: (currentYear-40)...(currentYear-20)) // Low popularity, likely older or niche
         }
     }
-}
-
-// MARK: - Global Helper Functions
-func estimateGenderFromName(_ name: String) -> String {
-    // Enhanced gender detection with comprehensive name lists
-    let lowercaseName = name.lowercased()
-    
-    // Group indicators
-    if lowercaseName.contains("band") || 
-       lowercaseName.contains("boys") ||
-       lowercaseName.contains("girls") ||
-       lowercaseName.contains("sisters") ||
-       lowercaseName.contains("brothers") ||
-       lowercaseName.contains(" & ") ||
-       lowercaseName.contains(" and ") ||
-       lowercaseName.contains("crew") ||
-       lowercaseName.contains("collective") {
-        return "Group"
-    }
-    
-    // Extended male names list
-    let maleNames = ["john", "michael", "david", "james", "robert", "william", "richard", "thomas", "charles", "christopher", "daniel", "matthew", "anthony", "mark", "donald", "steven", "paul", "andrew", "joshua", "kenneth", "kevin", "brian", "george", "edward", "ronald", "timothy", "jason", "jeffrey", "ryan", "jacob", "gary", "nicholas", "eric", "jonathan", "stephen", "larry", "justin", "scott", "brandon", "benjamin", "samuel", "frank", "gregory", "raymond", "alexander", "patrick", "jack", "dennis", "jerry", "tyler", "aaron", "jose", "henry", "adam", "douglas", "nathan", "peter", "zachary", "noah", "carl", "arthur", "harold", "jordan", "lawrence", "ralph", "billy", "wayne", "roy", "eugene", "louis", "albert", "vincent", "mason", "liam", "elijah", "lucas", "sebastian", "aiden", "joseph", "carter", "owen", "wyatt", "luke", "jayden", "dylan", "grayson", "levi", "isaac", "gabriel", "julian", "mateo", "jaxon", "lincoln", "caleb", "asher", "theodore", "eli", "easton", "evan", "adrian", "colton", "christian", "greyson", "connor", "landon", "gavin", "joel", "miles", "kanye", "drake", "eminem", "justin", "bruno", "ed", "shawn", "post", "travis", "kendrick", "cole", "mac", "lil", "xxxtentacion", "juice", "calvin", "martin", "alan", "marshmello", "skrillex", "diplo", "zedd", "tiësto", "avicii", "deadmau5", "kygo", "flume", "miguel", "usher", "chris", "frank", "weeknd", "abel", "harry", "zayn", "louis", "niall", "liam"]
-    
-    // Extended female names list  
-    let femaleNames = ["mary", "patricia", "jennifer", "linda", "elizabeth", "barbara", "susan", "jessica", "sarah", "karen", "nancy", "lisa", "betty", "helen", "sandra", "donna", "carol", "ruth", "sharon", "michelle", "laura", "kimberly", "deborah", "dorothy", "amy", "angela", "ashley", "brenda", "emma", "olivia", "cynthia", "marie", "janet", "catherine", "frances", "christine", "samantha", "debra", "rachel", "carolyn", "virginia", "maria", "heather", "diane", "julie", "joyce", "victoria", "kelly", "christina", "joan", "evelyn", "lauren", "judith", "megan", "cheryl", "andrea", "hannah", "jacqueline", "martha", "gloria", "sara", "janice", "julia", "kathryn", "alice", "teresa", "doris", "jane", "charlotte", "rebecca", "amelia", "ava", "sophia", "isabella", "mia", "harper", "camila", "gianna", "abigail", "luna", "ella", "sofia", "emily", "avery", "mila", "scarlett", "eleanor", "madison", "layla", "penelope", "aria", "chloe", "grace", "ellie", "nora", "hazel", "zoey", "riley", "lily", "aurora", "violet", "nova", "emilia", "zoe", "stella", "everly", "taylor", "rihanna", "beyonce", "beyoncé", "ariana", "selena", "demi", "katy", "lady", "adele", "billie", "lana", "lorde", "sia", "pink", "shakira", "madonna", "cher", "whitney", "mariah", "celine", "alicia", "nicki", "gaga", "swift", "grande", "eilish", "del", "rey", "dua", "lipa", "olivia", "rodrigo", "camila", "cabello", "halsey", "kesha", "miley", "cyrus", "britney", "spears", "christina", "aguilera", "alicia", "keys", "janet", "jackson", "lauryn", "hill", "amy", "winehouse", "björk", "robyn", "grimes", "fka", "twigs", "solange", "jhené", "aiko", "sza", "lianne", "la", "havas", "kali", "uchis"]
-    
-    // Check if any part of the name matches known names
-    let nameWords = lowercaseName.components(separatedBy: .whitespacesAndNewlines.union(.punctuationCharacters)).filter { !$0.isEmpty }
-    
-    for word in nameWords {
-        if maleNames.contains(word) {
-            return "Male"
-        }
-        if femaleNames.contains(word) {
-            return "Female"
-        }
-    }
-    
-    // Default fallback
-    return "Unknown"
 } 

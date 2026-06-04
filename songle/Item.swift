@@ -41,13 +41,15 @@ final class Artist {
 // MARK: - Guess Model
 @Model
 final class Guess {
+    var id: String = UUID().uuidString // Default value for migration
     var artistName: String
     var isCorrect: Bool
     var hints: [String: String] // Key-value pairs for hint results
     var timestamp: Date
-    var artistImageURL: String? // Artist profile image URL
+    var artistImageURL: String? = nil // Optional with default
     
     init(artistName: String, isCorrect: Bool = false, hints: [String: String] = [:], artistImageURL: String? = nil) {
+        self.id = UUID().uuidString
         self.artistName = artistName
         self.isCorrect = isCorrect
         self.hints = hints

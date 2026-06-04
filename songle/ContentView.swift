@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  songle
+//  Spolle
 //
 //  Created by Ümit BAĞ on 7/2/25.
 //
@@ -8,7 +8,11 @@
 import SwiftUI
 import SwiftData
 import AVFoundation
+import AVFoundation
 import AVKit
+import GoogleMobileAds
+
+
 
 // MARK: - Theme Manager for Dark Mode
 class ThemeManager: ObservableObject {
@@ -27,43 +31,30 @@ class ThemeManager: ObservableObject {
     }
 }
 
-// MARK: - Main View with Bottom Navigation
+// MARK: - Main View (Single Page)
 struct MainView: View {
-    @State private var selectedTab = 0
     @StateObject private var themeManager = ThemeManager()
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            HomeView()
-                .tabItem {
-                    Image(systemName: "house.fill")
-                }
-                .tag(0)
-            
-            MusicView()
-                .tabItem {
-                    Image(systemName: "music.note")
-                }
-                .tag(1)
-            
-            ProfileView()
-                .tabItem {
-                    Image(systemName: "person.circle")
-                }
-                .tag(2)
-        }
-        .accentColor(.blue)
-        .environmentObject(themeManager)
-        .preferredColorScheme(themeManager.colorScheme)
+        HomeView()
+            .environmentObject(themeManager)
+            .preferredColorScheme(themeManager.colorScheme)
     }
 }
 
 // MARK: - Home View (Main Screen)
 struct HomeView: View {
-    @StateObject private var spotifyService = SpotifyService.shared
+    @StateObject private var firestoreService = FirestoreService.shared
+    @EnvironmentObject private var themeManager: ThemeManager
+    @ObservedObject private var languageManager = LanguageManager.shared
+    @ObservedObject private var ratingManager = AppRatingManager.shared
+    @ObservedObject private var adMobManager = AdMobManager.shared
     @State private var showGameView = false
     @State private var showHelpSheet = false
-    @State private var showSpotifySetup = false
+    @State private var showLanguageSelection = false
+    
+    @State private var isDailyGameCompleted = false
+    @State private var gameInstanceId = UUID()
     
     var body: some View {
         NavigationView {
@@ -72,859 +63,1069 @@ struct HomeView: View {
                 Color(.systemBackground)
                     .ignoresSafeArea()
                 
-                VStack(spacing: 40) {
-                    Spacer(minLength: 60)
-                    
-                    // Main Content
-                    VStack(spacing: 30) {
-                        // Title
-                        Text("Guess the Artist")
-                            .font(.system(size: 36, weight: .bold, design: .default))
-                            .foregroundColor(.primary)
-                            .multilineTextAlignment(.center)
+                VStack(spacing: 0) {
+                    // Main Content - Centered
+                    VStack {
+                        Spacer()
                         
-                        // Subtitle
-                        Text("Challenge yourself with a new artist every day.\nCan you guess who it is?")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .lineSpacing(2)
-                    }
-                    
-                    Spacer()
-                    
-                    // Start Button
-                    Button(action: {
-                        showGameView = true
-                    }) {
-                        HStack {
-                            if spotifyService.isAuthenticated {
-                                Image(systemName: "music.note")
-                                    .font(.system(size: 16, weight: .medium))
+                        VStack(spacing: 40) {
+                            // Logo
+                            VStack(spacing: 8) {
+                                Image("Logo")
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(height: 200)
+                                    .shadow(color: Color(red: 0.7, green: 0.3, blue: 1.0).opacity(0.3), radius: 10, x: 0, y: 5)
                             }
-                        Text("Start Daily Guess")
-                            .font(.system(size: 18, weight: .semibold))
-                            if spotifyService.isAuthenticated {
-                                Text("(Spotify)")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .opacity(0.8)
+                            
+                            // Title and Subtitle
+                            VStack(spacing: 16) {
+                                Text(languageManager.localizedString(for: "guess_the_artist"))
+                                    .font(.system(size: 36, weight: .bold, design: .default))
+                                    .foregroundColor(.primary)
+                                    .multilineTextAlignment(.center)
+                                
+                                Text(languageManager.localizedString(for: "challenge_yourself"))
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .lineSpacing(2)
                             }
-                        }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 50)
-                            .background(
-                                RoundedRectangle(cornerRadius: 25)
-                                .fill(
-                                    spotifyService.isAuthenticated 
-                                    ? LinearGradient(colors: [Color.green, Color.blue], startPoint: .leading, endPoint: .trailing)
-                                    : LinearGradient(colors: [Color.blue, Color.blue], startPoint: .leading, endPoint: .trailing)
+                            
+                            // Start Button
+                            Button(action: {
+                                showInterstitialAdAndStartGame()
+                            }) {
+                                HStack {
+                                    if firestoreService.isConnected {
+                                        Image(systemName: "music.note")
+                                            .font(.system(size: 16, weight: .medium))
+                                    }
+                                    Text(languageManager.localizedString(for: "start_the_game"))
+                                        .font(.system(size: 18, weight: .semibold))
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 50)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 25)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [Color(red: 0.7, green: 0.3, blue: 1.0), Color(red: 0.2, green: 0.6, blue: 1.0)],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
                                 )
-                            )
-                            .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)
-                    }
-                    .padding(.horizontal, 40)
-                    
-                    // Spotify Setup Button
-                    if !spotifyService.isAuthenticated {
-                        Button(action: {
-                            showSpotifySetup = true
-                        }) {
-                            HStack {
-                                Image(systemName: "music.note.house")
-                                    .font(.system(size: 16, weight: .medium))
-                                Text("Connect Spotify")
-                                    .font(.system(size: 16, weight: .medium))
+                                .shadow(color: Color(red: 0.7, green: 0.3, blue: 1.0).opacity(0.3), radius: 10, x: 0, y: 5)
                             }
-                            .foregroundColor(.green)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                            .background(
-                                RoundedRectangle(cornerRadius: 22)
-                                    .stroke(Color.green, lineWidth: 1.5)
-                            )
+                            .padding(.horizontal, 40)
+                            
+                            Spacer()
                         }
-                        .padding(.horizontal, 40)
-                        .padding(.top, 16)
-                    }
-                    
-                    // Spotify Status and Refresh
-                    HStack {
-                        if spotifyService.isAuthenticated {
-                            Text("🎵 Spotify Connected")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                        } else {
-                            Text("🎵 Offline Mode")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                        }
+                        .padding(.horizontal, 30)
                         
-                        Button(action: {
-                            print("🔄 Manual Spotify refresh triggered")
-                            Task {
-                                await spotifyService.reloadCredentialsAndAuthenticate()
+                        // Banner Ad at Bottom
+                        AdMobBannerView()
+                            .frame(height: 50)
+                            .background(Color(.systemGray6))
+                    }
+                }
+                .navigationTitle("")
+#if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+#endif
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        HStack(spacing: 12) {
+                            Button(action: {
+                                themeManager.isDarkMode.toggle()
+                            }) {
+                                Image(systemName: themeManager.isDarkMode ? "sun.max.fill" : "moon.fill")
+                                    .font(.title2)
+                                    .foregroundColor(themeManager.isDarkMode ? .orange : .blue)
                             }
-                        }) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                            
+                            Button(action: {
+                                showLanguageSelection = true
+                            }) {
+                                HStack(spacing: 4) {
+                                    Text(languageManager.currentLanguage.flag)
+                                        .font(.system(size: 16))
+                                    Image(systemName: "globe")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(.blue)
+                                }
+                            }
                         }
                     }
-                    .padding(.top, 12)
                     
-                    Spacer(minLength: 100)
-                }
-                .padding(.horizontal, 30)
-            }
-            .navigationTitle("Daily Guess")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        showHelpSheet = true
-                    }) {
-                        Image(systemName: "questionmark.circle")
-                            .font(.title2)
-                            .foregroundColor(.blue)
+                    ToolbarItemGroup(placement: .navigationBarTrailing) {
+                        // Help Button
+                        Button(action: {
+                            showHelpSheet = true
+                        }) {
+                            Image(systemName: "questionmark.circle")
+                                .font(.title2)
+                                .foregroundColor(.blue)
+                        }
                     }
                 }
             }
-        }
-        .fullScreenCover(isPresented: $showGameView) {
-            GameView()
-        }
-        .sheet(isPresented: $showHelpSheet) {
-            HelpView()
-        }
-        .sheet(isPresented: $showSpotifySetup) {
-            SpotifySetupView()
+            .fullScreenCover(isPresented: $showGameView) {
+                GameView(isDailyGameCompleted: $isDailyGameCompleted, showGameView: $showGameView)
+                    .id(gameInstanceId)
+            }
+            .sheet(isPresented: $showHelpSheet) {
+                HelpView()
+            }
+            .sheet(isPresented: $showLanguageSelection) {
+                LanguageSelectionView()
+            }
+            
+            .overlay(
+                // Rating prompt overlay
+                Group {
+                    if ratingManager.shouldShowRatingPrompt {
+                        RatingPromptView()
+                            .transition(.opacity.combined(with: .scale))
+                            .zIndex(1000)
+                    }
+                }
+            )
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StartNewGameInstance"))) { _ in
+                gameInstanceId = UUID()
+            }
         }
     }
 }
-
-// MARK: - Game View
-struct GameView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    @State private var gameManager: GameManager?
-    @State private var searchText = ""
-    @State private var showSuccessView = false
-    @State private var searchResults: [Artist] = []
-    @State private var showSearchResults = false
-    @State private var animateHints = false
-    @State private var refreshID = UUID()
-    
-    var body: some View {
-        ZStack {
-            // Background
-            LinearGradient(
-                colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.3)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+    // MARK: - HomeView Extensions
+    extension HomeView {
+        private func showInterstitialAdAndStartGame() {
+            guard let rootViewController = getRootViewController() else {
+                // If can't get root view controller, proceed without ad
+                gameInstanceId = UUID()
+                showGameView = true
+                return
+            }
             
-            VStack(spacing: 0) {
-                // Header with Close Button
-                HStack {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                        .font(.title2)
-                            .foregroundColor(.primary)
-                            .frame(width: 32, height: 32)
-                            .background(Color(.systemGray5))
-                            .clipShape(Circle())
+            adMobManager.showInterstitialAd(from: rootViewController) {
+                // This closure is called when the ad is dismissed or if ad fails to load
+                DispatchQueue.main.async {
+                    self.gameInstanceId = UUID()
+                    self.showGameView = true
+                }
+            }
+        }
+    }
+    
+    // MARK: - Game View
+    struct GameView: View {
+        @Environment(\.dismiss) private var dismiss
+        @Environment(\.modelContext) private var modelContext
+        @ObservedObject private var languageManager = LanguageManager.shared
+        @Binding var isDailyGameCompleted: Bool
+        @State private var gameManager: GameManager?
+        @State private var searchText = ""
+        @State private var showSuccessView = false
+        @State private var searchResults: [Artist] = []
+        @State private var showSearchResults = false
+        @State private var animateHints = false
+        @State private var refreshID = UUID()
+        @FocusState private var isTextFieldFocused: Bool
+        @Binding var showGameView: Bool
+        
+        var body: some View {
+            ZStack {
+                // Background
+                LinearGradient(
+                    colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.3)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
+                VStack(spacing: 0) {
+                    // Header with Close Button
+                    HStack {
+                        Button(action: { dismiss() }) {
+                            Image(systemName: "xmark")
+                                .font(.title2)
+                                .foregroundColor(.primary)
+                                .frame(width: 32, height: 32)
+                                .background(Color(.systemGray5))
+                                .clipShape(Circle())
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
+                    
+                    ScrollView {
+                        VStack(spacing: 32) {
+                            // Title Section
+                            VStack(spacing: 12) {
+                                Text(languageManager.localizedString(for: "guess_the_artist"))
+                                    .font(.system(size: 32, weight: .bold, design: .default))
+                                    .foregroundColor(.primary)
+                                    .opacity(animateHints ? 1 : 0)
+                                    .offset(y: animateHints ? 0 : -20)
+                                    .animation(.easeOut(duration: 0.8).delay(0.1), value: animateHints)
+                                
+                                Text(languageManager.localizedString(for: "guess_daily_artist_spotify"))
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .opacity(animateHints ? 1 : 0)
+                                    .offset(y: animateHints ? 0 : -20)
+                                    .animation(.easeOut(duration: 0.8).delay(0.2), value: animateHints)
+                            }
+                            .padding(.top, 20)
+                            
+                            // Input Section
+                            VStack(spacing: 16) {
+                                // Search Bar
+                                VStack(alignment: .leading, spacing: 0) {
+                                    HStack(spacing: 12) {
+                                        TextField(languageManager.localizedString(for: "enter_your_guess"), text: $searchText)
+                                            .font(.system(size: 16, weight: .medium))
+                                            .padding(.horizontal, 20)
+                                            .padding(.vertical, 16)
+                                            .background(Color(.systemGray6))
+                                            .cornerRadius(25)
+                                            .focused($isTextFieldFocused)
+                                            .onChange(of: searchText) { _, newValue in
+                                                updateSearchResults(newValue)
+                                            }
+                                            .onSubmit {
+                                                submitGuess()
+                                            }
+                                            .opacity(animateHints ? 1 : 0)
+                                            .offset(y: animateHints ? 0 : 20)
+                                            .animation(.easeOut(duration: 0.8).delay(0.3), value: animateHints)
+                                    }
+                                    
+                                    // Search Results Dropdown
+                                    if showSearchResults && !searchResults.isEmpty {
+                                        VStack(spacing: 0) {
+                                            ForEach(searchResults, id: \.id) { artist in
+                                                Button(action: {
+                                                    searchText = artist.name
+                                                    showSearchResults = false
+                                                }) {
+                                                    HStack {
+                                                        Text(artist.name)
+                                                            .font(.system(size: 16, weight: .medium))
+                                                            .foregroundColor(.primary)
+                                                        Spacer()
+                                                    }
+                                                    .padding(.horizontal, 20)
+                                                    .padding(.vertical, 12)
+                                                    .background(Color(.systemBackground))
+                                                }
+                                                .buttonStyle(PlainButtonStyle())
+                                                
+                                                if artist.id != searchResults.last?.id {
+                                                    Divider()
+                                                        .padding(.horizontal, 20)
+                                                }
+                                            }
+                                        }
+                                        .background(Color(.systemBackground))
+                                        .cornerRadius(12)
+                                        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                                        .padding(.top, 8)
+                                    }
+                                }
+                                
+                                // Submit Button
+                                Button(action: submitGuess) {
+                                    Text(languageManager.localizedString(for: "submit_guess"))
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 50)
+                                        .background(submitButtonBackground)
+                                        .scaleEffect(searchText.isEmpty ? 0.98 : 1.0)
+                                        .animation(.easeInOut(duration: 0.2), value: searchText.isEmpty)
+                                }
+                                .disabled(searchText.isEmpty)
+                                .opacity(animateHints ? 1 : 0)
+                                .offset(y: animateHints ? 0 : 20)
+                                .animation(.easeOut(duration: 0.8).delay(0.4), value: animateHints)
+                            }
+                            .padding(.horizontal, 20)
+                            
+                            // Remaining Guesses or Game Result
+                            if let game = gameManager?.currentGame {
+                                if game.isCompleted {
+                                    // Show the answer prominently when game is over
+                                    VStack(spacing: 12) {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: game.isWon ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                                .font(.system(size: 24))
+                                                .foregroundColor(game.isWon ? .green : .red)
+                                            
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(game.isWon ? languageManager.localizedString(for: "correct_celebration") : languageManager.localizedString(for: "game_over"))
+                                                    .font(.system(size: 18, weight: .bold))
+                                                    .foregroundColor(game.isWon ? .green : .primary)
+                                                
+                                                if let targetArtist = gameManager?.targetArtist {
+                                                    let messageKey = game.isWon ? "you_guessed" : "answer_was"
+                                                    let message = languageManager.localizedString(for: messageKey)
+                                                    Text(String(format: message, targetArtist.name))
+                                                        .font(.system(size: 16, weight: .medium))
+                                                        .foregroundColor(.secondary)
+                                                }
+                                            }
+                                            
+                                            Spacer()
+                                            
+                                            Button(languageManager.localizedString(for: "view_result")) {
+                                                showSuccessView = true
+                                            }
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 20)
+                                                    .fill(Color.blue)
+                                            )
+                                        }
+                                    }
+                                    .padding(16)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(game.isWon ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 12)
+                                                    .stroke(game.isWon ? Color.green.opacity(0.3) : Color.red.opacity(0.3), lineWidth: 1)
+                                            )
+                                    )
+                                    .padding(.horizontal, 20)
+                                    .opacity(animateHints ? 1 : 0)
+                                    .offset(y: animateHints ? 0 : 20)
+                                    .animation(.easeOut(duration: 0.8).delay(0.5), value: animateHints)
+                                } else {
+                                    Text("\(languageManager.localizedString(for: "remaining_guesses")): \(game.attemptsRemaining)")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                        .opacity(animateHints ? 1 : 0)
+                                        .offset(y: animateHints ? 0 : 20)
+                                        .animation(.easeOut(duration: 0.8).delay(0.5), value: animateHints)
+                                }
+                            }
+                            
+                            
+                            
+                            // Previous Guesses
+                            if let game = gameManager?.currentGame, !game.currentGuesses.isEmpty {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text(languageManager.localizedString(for: "your_guesses"))
+                                            .font(.system(size: 20, weight: .bold))
+                                            .foregroundColor(.primary)
+                                        
+                                        HStack(spacing: 12) {
+                                            Text("\(languageManager.localizedString(for: "correct"))  \(languageManager.localizedString(for: "close_match"))  \(languageManager.localizedString(for: "wrong"))")
+                                                .font(.system(size: 14, weight: .medium))
+                                                .foregroundColor(.secondary)
+                                            
+                                            Spacer()
+                                            
+                                            Text(languageManager.localizedString(for: "latest_guess_first"))
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(.secondary.opacity(0.8))
+                                                .italic()
+                                        }
+                                    }
+                                    .padding(.horizontal, 20)
+                                    
+                                    // Display guesses in reverse chronological order (newest first)
+                                    // Sort by timestamp to ensure proper ordering, then use stable IDs
+                                    ForEach(Array(game.currentGuesses.sorted(by: { $0.timestamp < $1.timestamp }).enumerated().reversed()), id: \.element.id) { (displayIndex, guess) in
+                                        let sortedGuesses = game.currentGuesses.sorted(by: { $0.timestamp < $1.timestamp })
+                                        let guessNumber = (sortedGuesses.firstIndex(where: { $0.id == guess.id }) ?? 0) + 1
+                                        let latestGuess = sortedGuesses.last
+                                        let isLatest = guess.id == latestGuess?.id
+                                        
+                                        // Debug logging for guess ordering in Daily Game
+                                        let _ = print("🎯 Daily Game - Displaying guess: guessNumber=\(guessNumber), artist=\(guess.artistName), isLatest=\(isLatest), totalGuesses=\(game.currentGuesses.count), id=\(guess.id), timestamp=\(guess.timestamp)")
+                                        
+                                        PreviousGuessView(guess: guess, index: guessNumber, isLatest: isLatest)
+                                            .padding(.horizontal, 20)
+                                    }
+                                }
+                            }
+                            
+                            Spacer(minLength: 40)
+                        }
+                    }
+                }
+            }
+            .onAppear {
+                print("🎮 GameView onAppear triggered")
+                
+                // Clear any potential input issues by resetting the search text and focus
+                searchText = ""
+                showSearchResults = false
+                isTextFieldFocused = false
+                
+                // Force a slight delay to ensure UI is settled before setting up game
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    // Only create GameManager if we don't have one, or ensure existing game is properly loaded
+                    if gameManager == nil {
+                        print("🎮 GameView appeared - creating new GameManager")
+                        gameManager = GameManager(modelContext: modelContext, gameType: .daily)
+                    } else {
+                        print("🎮 GameView appeared - GameManager exists, ensuring game state is loaded")
+                        // Ensure the existing GameManager has the right context and current game loaded
+                        gameManager?.setModelContext(modelContext)
+                        
+                        // Double-check that we have a valid game loaded
+                        if gameManager?.currentGame == nil {
+                            print("⚠️ No current game found, setting up daily game")
+                            gameManager?.setupDailyGame()
+                        }
                     }
                     
-                    Spacer()
-                    
-                    Button("Reset") {
-                        print("🔴 Reset button tapped")
+                    // Verify we have a valid setup
+                    if let game = gameManager?.currentGame, let target = gameManager?.targetArtist {
+                        print("✅ Game state verified: date=\(game.dateString), target=\(target.name), completed=\(game.isCompleted), guesses=\(game.currentGuesses.count)")
                         
-                        // Reset UI state immediately
-                        animateHints = false
+                        // Update the completion status
+                        isDailyGameCompleted = game.isCompleted
+                    } else {
+                        print("⚠️ Game state incomplete after setup")
+                    }
+                }
+                
+                // Trigger animations
+                withAnimation {
+                    animateHints = true
+                }
+            }
+            .sheet(isPresented: $showSuccessView) {
+                if let targetArtist = gameManager?.targetArtist {
+                    SuccessView(
+                        artist: targetArtist,
+                        isWon: gameManager?.currentGame?.isWon ?? false,
+                        isDailyGameCompleted: $isDailyGameCompleted,
+                        gameManager: gameManager,
+                        showGameView: $showGameView
+                    )
+                }
+            }
+            .onTapGesture {
+                showSearchResults = false
+            }
+            .onChange(of: gameManager?.currentGame?.isCompleted) { _, isCompleted in
+                if let isCompleted = isCompleted {
+                    isDailyGameCompleted = isCompleted
+                    
+                    // Dismiss keyboard when game is completed
+                    if isCompleted {
+                        isTextFieldFocused = false
+                        AppRatingManager.shared.incrementGameCompletion()
+                    }
+                }
+            }
+            .id(refreshID)
+        }
+        
+        // MARK: - Computed Properties
+        private var submitButtonBackground: some View {
+            let isDisabled = searchText.isEmpty
+            
+            return RoundedRectangle(cornerRadius: 25)
+                .fill(
+                    LinearGradient(
+                        colors: isDisabled
+                        ? [Color.gray.opacity(0.6), Color.gray.opacity(0.4)]
+                        : [Color.blue, Color.blue.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+        }
+        
+        private func updateSearchResults(_ query: String) {
+            if query.isEmpty {
+                searchResults = []
+                showSearchResults = false
+            } else {
+                searchResults = gameManager?.searchArtists(query: query) ?? []
+                showSearchResults = !searchResults.isEmpty
+            }
+        }
+        
+        private func submitGuess() {
+            guard !searchText.isEmpty else { return }
+            
+            // Dismiss keyboard immediately when guess is submitted
+            isTextFieldFocused = false
+            
+            Task {
+                if (await gameManager?.submitGuess(searchText)) != nil {
+                    await MainActor.run {
                         searchText = ""
                         showSearchResults = false
                         
-                        // Perform the game reset
-                        gameManager?.resetTodaysGame()
-                        
-                        // Force view refresh and restart animations
-                        refreshID = UUID()
-                        
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            withAnimation {
-                                animateHints = true
+                        // Show success view when game ends (win or lose) after a brief delay
+                        if gameManager?.currentGame?.isCompleted == true {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                showSuccessView = true
                             }
                         }
                     }
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.blue)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color(.systemGray5))
-                    .cornerRadius(8)
-                    }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                
-                ScrollView {
-                    VStack(spacing: 32) {
-                        // Title Section
-                        VStack(spacing: 12) {
-                            Text("Guess the Artist")
-                                .font(.system(size: 32, weight: .bold, design: .default))
-                                .foregroundColor(.primary)
-                                .opacity(animateHints ? 1 : 0)
-                                .offset(y: animateHints ? 0 : -20)
-                                .animation(.easeOut(duration: 0.8).delay(0.1), value: animateHints)
-                            
-                            Text("Guess the daily artist from Spotify")
-                                .font(.system(size: 16, weight: .medium))
+                }
+            }
+        }
+    }
+    
+    // MARK: - Previous Guess View
+    struct PreviousGuessView: View {
+        let guess: Guess
+        let index: Int
+        let isLatest: Bool
+        @ObservedObject private var languageManager = LanguageManager.shared
+        @State private var showHints = false
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 16) {
+                // Guess Header
+                HStack(spacing: 12) {
+                    // Index with Latest Badge
+                    HStack(spacing: 8) {
+                        Text("\(index).")
+                            .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.secondary)
-                                .opacity(animateHints ? 1 : 0)
-                                .offset(y: animateHints ? 0 : -20)
-                                .animation(.easeOut(duration: 0.8).delay(0.2), value: animateHints)
-                        }
-                        .padding(.top, 20)
                         
-                        // Input Section
-                        VStack(spacing: 16) {
-                            // Search Bar
-                            VStack(alignment: .leading, spacing: 0) {
-                                HStack(spacing: 12) {
-                                    TextField("Enter your guess", text: $searchText)
-                                        .font(.system(size: 16, weight: .medium))
-                                        .padding(.horizontal, 20)
-                                        .padding(.vertical, 16)
-                                        .background(Color(.systemGray6))
-                                        .cornerRadius(25)
-                                        .onChange(of: searchText) { _, newValue in
-                                            updateSearchResults(newValue)
-                                        }
-                                        .onSubmit {
-                                            submitGuess()
-                                        }
-                                        .opacity(animateHints ? 1 : 0)
-                                        .offset(y: animateHints ? 0 : 20)
-                                        .animation(.easeOut(duration: 0.8).delay(0.3), value: animateHints)
-                                }
-                    
-                    // Search Results Dropdown
-                    if showSearchResults && !searchResults.isEmpty {
-                        VStack(spacing: 0) {
-                            ForEach(searchResults, id: \.id) { artist in
-                                Button(action: {
-                                    searchText = artist.name
-                                    showSearchResults = false
-                                }) {
-                                    HStack {
-                                        Text(artist.name)
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundColor(.primary)
-                                        Spacer()
-                                    }
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
-                                    .background(Color(.systemBackground))
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                
-                                if artist.id != searchResults.last?.id {
-                                    Divider()
-                                        .padding(.horizontal, 20)
-                                }
-                            }
-                        }
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
-                        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-                        .padding(.top, 8)
-                }
-                            }
-                            
-                            // Submit Button
-                            Button(action: submitGuess) {
-                                Text("Submit Guess")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 50)
-                                    .background(submitButtonBackground)
-                                    .scaleEffect(searchText.isEmpty ? 0.98 : 1.0)
-                                    .animation(.easeInOut(duration: 0.2), value: searchText.isEmpty)
-                            }
-                            .disabled(searchText.isEmpty)
-                            .opacity(animateHints ? 1 : 0)
-                            .offset(y: animateHints ? 0 : 20)
-                            .animation(.easeOut(duration: 0.8).delay(0.4), value: animateHints)
-                    }
-                        .padding(.horizontal, 20)
-                
-                        // Remaining Guesses
-                        if let game = gameManager?.currentGame {
-                            Text("Remaining Guesses: \(game.attemptsRemaining)")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.secondary)
-                                .opacity(animateHints ? 1 : 0)
-                                .offset(y: animateHints ? 0 : 20)
-                                .animation(.easeOut(duration: 0.8).delay(0.5), value: animateHints)
-                        }
-                        
-
-                        
-                        // Previous Guesses
-                        if let game = gameManager?.currentGame, !game.currentGuesses.isEmpty {
-                            VStack(alignment: .leading, spacing: 16) {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Your Guesses")
-                                        .font(.system(size: 20, weight: .bold))
-                                        .foregroundColor(.primary)
-                                    
-                                    Text("🟢 Correct  🟡 Close  ⚪ Wrong")
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding(.horizontal, 20)
-                                
-                                // Display guesses in reverse chronological order (newest first)
-                                ForEach(0..<game.currentGuesses.count, id: \.self) { index in
-                                    let reverseIndex = game.currentGuesses.count - 1 - index
-                                    let guess = game.currentGuesses[reverseIndex]
-                                    let guessNumber = reverseIndex + 1
-                                    PreviousGuessView(guess: guess, index: guessNumber)
-                                        .padding(.horizontal, 20)
-                                }
-                            }
-                        }
-                        
-                        // Game Over Message
-                        if let game = gameManager?.currentGame, game.isCompleted {
-                            GameOverView(
-                                isWon: game.isWon,
-                                targetArtist: gameManager?.targetArtist,
-                                onViewResult: { showSuccessView = true }
-                            )
-                            .padding(.horizontal, 20)
-                        }
-                        
-                        Spacer(minLength: 40)
-                    }
-                }
-            }
-        }
-        .onAppear {
-            // Always create fresh GameManager to ensure clean state
-            print("🎮 GameView appeared - creating fresh GameManager")
-            gameManager = GameManager(modelContext: modelContext)
-            
-            // Trigger animations
-            withAnimation {
-                animateHints = true
-            }
-        }
-        .fullScreenCover(isPresented: $showSuccessView) {
-            if let targetArtist = gameManager?.targetArtist {
-                SuccessView(
-                    artist: targetArtist,
-                    isWon: gameManager?.currentGame?.isWon ?? false
-                )
-            }
-        }
-        .onTapGesture {
-            showSearchResults = false
-        }
-        .id(refreshID)
-    }
-    
-    // MARK: - Computed Properties
-    private var submitButtonBackground: some View {
-        let isDisabled = searchText.isEmpty
-        
-        return RoundedRectangle(cornerRadius: 25)
-            .fill(
-                LinearGradient(
-                    colors: isDisabled 
-                        ? [Color.gray.opacity(0.6), Color.gray.opacity(0.4)]
-                        : [Color.blue, Color.blue.opacity(0.8)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-    }
-    
-    private func updateSearchResults(_ query: String) {
-        if query.isEmpty {
-            searchResults = []
-            showSearchResults = false
-        } else {
-            searchResults = gameManager?.searchArtists(query: query) ?? []
-            showSearchResults = !searchResults.isEmpty
-        }
-    }
-    
-    private func submitGuess() {
-        guard !searchText.isEmpty else { return }
-        
-        Task {
-            if let guess = await gameManager?.submitGuess(searchText) {
-                await MainActor.run {
-                    searchText = ""
-                    showSearchResults = false
-                    
-                    if guess.isCorrect {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            showSuccessView = true
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-// MARK: - Previous Guess View
-struct PreviousGuessView: View {
-    let guess: Guess
-    let index: Int
-    @State private var showHints = false
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Guess Header
-            HStack(spacing: 12) {
-                // Index
-                Text("\(index).")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.secondary)
-                
-                // Artist Image
-                Group {
-                    if let imageURL = guess.artistImageURL {
-                        AsyncImage(url: URL(string: imageURL)) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Circle()
-                                .fill(Color.gray.opacity(0.3))
-                                .overlay(
-                                    ProgressView()
-                                        .scaleEffect(0.8)
-                                        .tint(.blue)
+                        if isLatest {
+                            Text(languageManager.localizedString(for: "latest"))
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.blue)
                                 )
-                        }
-                        .frame(width: 56, height: 56)
-                        .clipShape(Circle())
-                        .overlay(
-                            Circle()
-                                .stroke(guess.isCorrect ? Color.green.opacity(0.6) : Color.red.opacity(0.4), lineWidth: 2.5)
-                        )
-                        .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
-                        .animation(.easeIn(duration: 0.3), value: imageURL)
-                    } else {
-                        Circle()
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(width: 56, height: 56)
-                            .overlay(
-                                Image(systemName: "person.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(.secondary)
-                            )
-                            .overlay(
-                                Circle()
-                                    .stroke(guess.isCorrect ? Color.green.opacity(0.6) : Color.red.opacity(0.4), lineWidth: 2.5)
-                            )
-                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
-                    }
-                }
-                
-                // Artist Name
-                Text(guess.artistName)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                // Result Icon
-                if guess.isCorrect {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.system(size: 22))
-                } else {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.red)
-                        .font(.system(size: 22))
-                }
-            }
-            
-            // Hint Cards
-            if showHints {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
-                ForEach(Array(guess.hints.keys.sorted()), id: \.self) { key in
-                        if let hintData = guess.hints[key] {
-                            GuessHintCard(
-                                icon: getIconForHint(key),
-                                title: key,
-                                value: getValueFromHint(hintData),
-                                matchType: getMatchTypeFromHint(hintData),
-                                animationDelay: Double(Array(guess.hints.keys.sorted()).firstIndex(of: key) ?? 0) * 0.1
-                            )
+                                .scaleEffect(0.9)
                         }
                     }
-                }
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-        )
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                withAnimation(.easeOut(duration: 0.5)) {
-                    showHints = true
-                }
-            }
-        }
-    }
-    
-    private func getIconForHint(_ key: String) -> String {
-        switch key {
-        case "Genre": return "music.note"
-        case "Country": return "globe"
-        case "Debut Year": return "calendar"
-        case "Gender": return "person"
-        case "Type": return "person.2"
-        case "Popularity": return "chart.bar.fill"
-        default: return "questionmark"
-        }
-    }
-    
-    private func getValueFromHint(_ hint: String) -> String {
-        // Handle new format with "|" separator
-        if hint.contains("|") {
-            return String(hint.split(separator: "|").first ?? "")
-        }
-        
-        // Handle old format (e.g., "Not Very High", "❌ Not Pop")
-        if hint.hasPrefix("❌ Not ") {
-            return String(hint.dropFirst(6)) // Remove "❌ Not "
-        } else if hint.hasPrefix("Not ") {
-            return String(hint.dropFirst(4)) // Remove "Not "
-        }
-        
-        return hint
-    }
-    
-    private func getMatchTypeFromHint(_ hint: String) -> HintMatchType {
-        // Handle new format with "|" separator
-        if hint.contains("|") {
-            let parts = hint.split(separator: "|")
-            if parts.count > 1 {
-                switch String(parts[1]) {
-                case "correct": return .correct
-                case "close": return .close
-                default: return .incorrect
-                }
-            }
-        }
-        
-        // Handle old format - if it has "Not" or "❌", it's incorrect
-        if hint.contains("Not ") || hint.contains("❌") {
-            return .incorrect
-        }
-        
-        // If it doesn't have separators or negative indicators, assume correct
-        return .correct
-    }
-}
-
-// MARK: - Guess Hint Card
-struct GuessHintCard: View {
-    let icon: String
-    let title: String
-    let value: String
-    let matchType: HintMatchType
-    let animationDelay: Double
-    @State private var isVisible = false
-    @State private var scale = 0.8
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(matchType.iconColor)
-                .frame(width: 20, height: 20)
-            
-        VStack(spacing: 4) {
-            Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.secondary)
-            
-            Text(value)
-                    .font(.system(size: 14, weight: .bold))
-                .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-        }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 80)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(matchType.backgroundColor)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(matchType.borderColor, lineWidth: 2)
-                )
-        )
-        .scaleEffect(scale)
-        .opacity(isVisible ? 1 : 0)
-        .offset(y: isVisible ? 0 : 20)
-        .onAppear {
-            withAnimation(.easeOut(duration: 0.6).delay(animationDelay)) {
-                isVisible = true
-                scale = 1.0
-            }
-        }
-    }
-}
-
-// MARK: - Hint Match Type
-enum HintMatchType {
-    case correct
-    case close
-    case incorrect
-    
-    var backgroundColor: Color {
-        switch self {
-        case .correct: return .green.opacity(0.2)
-        case .close: return .yellow.opacity(0.2)
-        case .incorrect: return .gray.opacity(0.1)
-        }
-    }
-    
-    var borderColor: Color {
-        switch self {
-        case .correct: return .green.opacity(0.6)
-        case .close: return .yellow.opacity(0.6)
-        case .incorrect: return .gray.opacity(0.3)
-        }
-    }
-    
-    var iconColor: Color {
-        switch self {
-        case .correct: return .green
-        case .close: return .orange
-        case .incorrect: return .gray
-        }
-    }
-}
-
-// MARK: - Game Over View
-struct GameOverView: View {
-    let isWon: Bool
-    let targetArtist: Artist?
-    let onViewResult: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: isWon ? "party.popper.fill" : "exclamationmark.triangle.fill")
-                .font(.system(size: 40))
-                .foregroundColor(isWon ? .green : .orange)
-            
-            VStack(spacing: 8) {
-                Text(isWon ? "🎉 Congratulations!" : "Game Over!")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(isWon ? .green : .primary)
-                
-                if let targetArtist = targetArtist {
-                    Text(isWon ? "You guessed \(targetArtist.name)!" : "The answer was: \(targetArtist.name)")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            
-            Button("View Result") {
-                onViewResult()
-            }
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 50)
-            .background(
-                RoundedRectangle(cornerRadius: 25)
-                    .fill(LinearGradient(
-                        colors: [Color.blue, Color.blue.opacity(0.8)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ))
-            )
-        }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-        )
-    }
-}
-
-// MARK: - Success View
-struct SuccessView: View {
-    @Environment(\.dismiss) private var dismiss
-    @StateObject private var spotifyService = SpotifyService.shared
-    let artist: Artist
-    let isWon: Bool
-    
-    // Convenience initializer for backward compatibility
-    init(artistName: String, isWon: Bool) {
-        self.artist = Artist(
-            id: "temp-\(UUID().uuidString)",
-            name: artistName,
-            gender: "Unknown",
-            country: "Unknown",
-            debutYear: 2000,
-            genre: "Unknown",
-            isSolo: true,
-            spotifyPopularity: 50
-        )
-        self.isWon = isWon
-    }
-    
-    // Primary initializer with Artist object
-    init(artist: Artist, isWon: Bool) {
-        self.artist = artist
-        self.isWon = isWon
-    }
-    
-    @State private var artistImageURL: String?
-    @State private var previewURL: String?
-    @State private var isLoadingData = true
-    @State private var audioPlayer: AVPlayer?
-    @State private var isPlaying = false
-    @State private var trackName: String?
-    
-    var body: some View {
-        ZStack {
-            // Background
-            LinearGradient(
-                colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.3)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-            
-        VStack(spacing: 30) {
-            Spacer()
-            
-            // Success/Failure Animation
-            Image(systemName: isWon ? "checkmark.circle.fill" : "x.circle.fill")
-                .font(.system(size: 80))
-                .foregroundColor(isWon ? .green : .red)
-                .scaleEffect(1.2)
-                .animation(.bouncy, value: true)
-            
-            VStack(spacing: 10) {
-                Text(isWon ? "Congratulations!" : "Game Over!")
-                    .font(.title)
-                    .fontWeight(.bold)
-                
-                    Text(isWon ? "You guessed \(artist.name)!" : "The artist was \(artist.name)")
-                    .font(.title2)
-                    .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-            }
-            
-                // Artist Image and Music Preview
-                VStack(spacing: 20) {
+                    
                     // Artist Image
                     Group {
-                        if isLoadingData {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 200, height: 200)
-                    .overlay(
-                                    ProgressView()
-                                        .scaleEffect(1.5)
-                                        .tint(.blue)
-                                )
-                        } else if let imageURL = artistImageURL {
+                        if let imageURL = guess.artistImageURL {
                             AsyncImage(url: URL(string: imageURL)) { image in
                                 image
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
                             } placeholder: {
-                                RoundedRectangle(cornerRadius: 12)
+                                Circle()
                                     .fill(Color.gray.opacity(0.3))
                                     .overlay(
                                         ProgressView()
-                                            .scaleEffect(1.2)
+                                            .scaleEffect(0.8)
                                             .tint(.blue)
                                     )
                             }
-                            .frame(width: 200, height: 200)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                            .frame(width: 56, height: 56)
+                            .clipShape(Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(guess.isCorrect ? Color.green.opacity(0.6) : Color.red.opacity(0.4), lineWidth: 2.5)
+                            )
+                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+                            .animation(.easeIn(duration: 0.3), value: imageURL)
                         } else {
-                            RoundedRectangle(cornerRadius: 12)
+                            Circle()
                                 .fill(Color.gray.opacity(0.3))
-                                .frame(width: 200, height: 200)
+                                .frame(width: 56, height: 56)
                                 .overlay(
-                                    VStack {
-                                        Image(systemName: "person.fill")
-                                            .font(.system(size: 40))
-                            .foregroundColor(.secondary)
-                                        Text("No Image")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
+                                    Image(systemName: "person.fill")
+                                        .font(.system(size: 22))
+                                        .foregroundColor(.secondary)
                                 )
+                                .overlay(
+                                    Circle()
+                                        .stroke(guess.isCorrect ? Color.green.opacity(0.6) : Color.red.opacity(0.4), lineWidth: 2.5)
+                                )
+                                .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
                         }
                     }
                     
-                    // Music Preview Controls
-                    if let previewURL = previewURL, let trackName = trackName {
-                        VStack(spacing: 12) {
-                            Text("🎵 \(trackName)")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.primary)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
-                            
-                            Button(action: togglePlayback) {
-                                HStack {
-                                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                        .font(.system(size: 16, weight: .medium))
-                                    Text(isPlaying ? "Pause Preview" : "Play Preview")
-                                        .font(.system(size: 16, weight: .medium))
-                                }
-                                .foregroundColor(.white)
-                                .frame(width: 200, height: 44)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 22)
-                                        .fill(LinearGradient(
-                                            colors: [Color.green, Color.blue],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        ))
+                    // Artist Name
+                    Text(guess.artistName)
+                        .font(.system(size: 18, weight: isLatest ? .bold : .semibold))
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    // Result Icon
+                    if guess.isCorrect {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.system(size: 22))
+                    } else {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.red)
+                            .font(.system(size: 22))
+                    }
+                }
+                
+                // Hint Cards
+                if showHints {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
+                        ForEach(Array(guess.hints.keys.sorted()), id: \.self) { key in
+                            if let hintData = guess.hints[key] {
+                                GuessHintCard(
+                                    icon: getIconForHint(key),
+                                    title: languageManager.localizedString(for: key),
+                                    value: getValueFromHint(hintData),
+                                    matchType: getMatchTypeFromHint(hintData),
+                                    animationDelay: Double(Array(guess.hints.keys.sorted()).firstIndex(of: key) ?? 0) * 0.1,
+                                    comparisonIndicator: getComparisonIndicator(key: key, hintData: hintData)
                                 )
-                                .shadow(color: .green.opacity(0.3), radius: 8, x: 0, y: 4)
                             }
                         }
-                    } else if !isLoadingData {
+                    }
+                }
+            }
+            .padding(.vertical, 16)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(isLatest ? Color.blue.opacity(0.05) : Color(.systemGray6).opacity(0.5))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(isLatest ? Color.blue.opacity(0.2) : Color.clear, lineWidth: 1)
+                    )
+            )
+            .scaleEffect(isLatest ? 1.02 : 1.0)
+            .shadow(color: .black.opacity(isLatest ? 0.1 : 0.05), radius: isLatest ? 6 : 3, x: 0, y: 2)
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isLatest)
+            .onAppear {
+                if isLatest {
+                    // Animate latest guess entry
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
+                        // Trigger any appearance animations
+                    }
+                    // Auto-show hints for latest guess after a delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        withAnimation(.easeOut(duration: 0.5)) {
+                            showHints = true
+                        }
+                    }
+                }
+            }
+            .onTapGesture {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                    showHints.toggle()
+                }
+            }
+        }
+        
+        private func getIconForHint(_ key: String) -> String {
+            switch key {
+            case "Genre": return "music.note"
+            case "Country": return "globe"
+            case "Debut Year": return "calendar"
+            case "Gender": return "person"
+            case "Type": return "person.2"
+            case "Popularity": return "chart.bar.fill"
+            default: return "questionmark"
+            }
+        }
+        
+        private func getValueFromHint(_ hint: String) -> String {
+            // Handle new format with "|" separator
+            if hint.contains("|") {
+                return String(hint.split(separator: "|").first ?? "")
+            }
+            
+            // Handle old format (e.g., "Not Very High", "❌ Not Pop")
+            if hint.hasPrefix("❌ Not ") {
+                return String(hint.dropFirst(6)) // Remove "❌ Not "
+            } else if hint.hasPrefix("Not ") {
+                return String(hint.dropFirst(4)) // Remove "Not "
+            }
+            
+            return hint
+        }
+        
+        private func getMatchTypeFromHint(_ hint: String) -> HintMatchType {
+            // Handle new format with "|" separator
+            if hint.contains("|") {
+                let parts = hint.split(separator: "|")
+                if parts.count > 1 {
+                    switch String(parts[1]) {
+                    case "correct": return .correct
+                    case "close": return .close
+                    default: return .incorrect
+                    }
+                }
+            }
+            
+            // Handle old format - if it has "Not" or "❌", it's incorrect
+            if hint.contains("Not ") || hint.contains("❌") {
+                return .incorrect
+            }
+            
+            // If it doesn't have separators or negative indicators, assume correct
+            return .correct
+        }
+        
+        private func getComparisonIndicator(key: String, hintData: String) -> String? {
+            // Only show comparison indicators for debut year and popularity
+            guard key == "Debut Year" || key == "Popularity" else { return nil }
+            
+            // Handle new format with "|" separator
+            if hintData.contains("|") {
+                let parts = hintData.split(separator: "|")
+                if parts.count > 2 {
+                    let comparison = String(parts[2])
+                    if comparison == "higher" {
+                        return "Higher"
+                    } else if comparison == "lower" {
+                        return "Lower"
+                    }
+                }
+            }
+            
+            // Handle old format - extract comparison from hint text
+            if key == "Debut Year" {
+                if hintData.contains("Higher") {
+                    return "Higher"
+                } else if hintData.contains("Lower") {
+                    return "Lower"
+                }
+            } else if key == "Popularity" {
+                if hintData.contains("Higher") {
+                    return "Higher"
+                } else if hintData.contains("Lower") {
+                    return "Lower"
+                }
+            }
+            
+            return nil
+        }
+    }
+    
+    // MARK: - Guess Hint Card
+    struct GuessHintCard: View {
+        let icon: String
+        let title: String
+        let value: String
+        let matchType: HintMatchType
+        let animationDelay: Double
+        let comparisonIndicator: String? // New parameter for higher/lower indicators
+        @State private var isVisible = false
+        @State private var scale = 0.8
+        
+        var body: some View {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(matchType.iconColor)
+                    .frame(width: 20, height: 20)
+                
+                VStack(spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+                    
+                    Text(value)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                    
+                    // Show comparison indicator for debut year and popularity
+                    if let indicator = comparisonIndicator {
+                        HStack(spacing: 2) {
+                            Image(systemName: indicator == "Higher" ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(indicatorColor)
+                            
+                            Text(indicator)
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundColor(indicatorColor)
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(indicatorColor.opacity(0.2))
+                        )
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 90) // Fixed height for consistent design
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(matchType.backgroundColor)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(matchType.borderColor, lineWidth: 2)
+                    )
+            )
+            .scaleEffect(scale)
+            .opacity(isVisible ? 1 : 0)
+            .offset(y: isVisible ? 0 : 20)
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.6).delay(animationDelay)) {
+                    isVisible = true
+                    scale = 1.0
+                }
+            }
+        }
+        
+        private var indicatorColor: Color {
+            if let indicator = comparisonIndicator {
+                if indicator.contains("Higher") {
+                    return .red
+                } else if indicator.contains("Lower") {
+                    return .blue
+                }
+            }
+            return .secondary
+        }
+    }
+    
+    // MARK: - Hint Match Type
+    enum HintMatchType {
+        case correct
+        case close
+        case incorrect
+        
+        var backgroundColor: Color {
+            switch self {
+            case .correct: return .green.opacity(0.2)
+            case .close: return .yellow.opacity(0.2)
+            case .incorrect: return .gray.opacity(0.1)
+            }
+        }
+        
+        var borderColor: Color {
+            switch self {
+            case .correct: return .green.opacity(0.6)
+            case .close: return .yellow.opacity(0.6)
+            case .incorrect: return .gray.opacity(0.3)
+            }
+        }
+        
+        var iconColor: Color {
+            switch self {
+            case .correct: return .green
+            case .close: return .orange
+            case .incorrect: return .gray
+            }
+        }
+    }
+    
+    // MARK: - Success View
+    struct SuccessView: View {
+        @Environment(\.dismiss) private var dismiss
+        @ObservedObject private var languageManager = LanguageManager.shared
+        @ObservedObject private var ratingManager = AppRatingManager.shared
+        @ObservedObject private var adMobManager = AdMobManager.shared
+        let artist: Artist
+        let isWon: Bool
+        @Binding var isDailyGameCompleted: Bool
+        let gameManager: GameManager?
+        @Binding var showGameView: Bool
+        
+        // Convenience initializer for backward compatibility
+        init(artistName: String, isWon: Bool, isDailyGameCompleted: Binding<Bool>, gameManager: GameManager?, showGameView: Binding<Bool>) {
+            self.artist = Artist(
+                id: "temp-\(UUID().uuidString)",
+                name: artistName,
+                gender: "Unknown",
+                country: "Unknown",
+                debutYear: 2000,
+                genre: "Unknown",
+                isSolo: true,
+                spotifyPopularity: 50
+            )
+            self.isWon = isWon
+            self._isDailyGameCompleted = isDailyGameCompleted
+            self.gameManager = gameManager
+            self._showGameView = showGameView
+        }
+        
+        // Primary initializer with Artist object
+        init(artist: Artist, isWon: Bool, isDailyGameCompleted: Binding<Bool>, gameManager: GameManager?, showGameView: Binding<Bool>) {
+            self.artist = artist
+            self.isWon = isWon
+            self._isDailyGameCompleted = isDailyGameCompleted
+            self.gameManager = gameManager
+            self._showGameView = showGameView
+        }
+        
+        @State private var artistImageURL: String?
+        @State private var isLoadingData = true
+        @State private var audioPlayer: AVPlayer?
+        @State private var isPlayingAudio = false
+        @State private var audioLoadError: String?
+        
+        var body: some View {
+            ZStack {
+                // Background
+                LinearGradient(
+                    colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.3)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
+                // Reset Button (Top Right) - Fixed positioning
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button(action: showInterstitialAdAndReset) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 18, weight: .medium))
+                                Text(languageManager.localizedString(for: "new_game"))
+                                    .font(.system(size: 15, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Color(red: 0.7, green: 0.3, blue: 1.0), Color(red: 0.2, green: 0.6, blue: 1.0)],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                            )
+                            .shadow(color: Color(red: 0.7, green: 0.3, blue: 1.0).opacity(0.3), radius: 8, x: 0, y: 4)
+                        }
+                        .padding(.trailing, 16)
+                    }
+                    .padding(.top, 16)
+                    Spacer()
+                }
+                .safeAreaInset(edge: .top) { Color.clear.frame(height: 0) }
+                
+                VStack(spacing: 30) {
+                    Spacer()
+                    
+                    // Success/Failure Animation
+                    Image(systemName: isWon ? "checkmark.circle.fill" : "x.circle.fill")
+                        .font(.system(size: 80))
+                        .foregroundColor(isWon ? .green : .red)
+                        .scaleEffect(1.2)
+                        .animation(.bouncy, value: true)
+                    
+                    VStack(spacing: 10) {
+                        Text(isWon ? languageManager.localizedString(for: "congratulations") : languageManager.localizedString(for: "game_over"))
+                            .font(.title)
+                            .fontWeight(.bold)
+                        
+                        Text({
+                            let messageKey = isWon ? "you_guessed" : "the_artist_was"
+                            return String(format: languageManager.localizedString(for: messageKey), artist.name)
+                        }())
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    }
+                    
+                    // Artist Image and Info
+                    VStack(spacing: 20) {
+                        // Artist Image
+                        Group {
+                            if isLoadingData {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(width: 200, height: 200)
+                                    .overlay(
+                                        ProgressView()
+                                            .scaleEffect(1.5)
+                                            .tint(.blue)
+                                    )
+                            } else if let imageURL = artistImageURL {
+                                AsyncImage(url: URL(string: imageURL)) { image in
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                } placeholder: {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color.gray.opacity(0.3))
+                                        .overlay(
+                                            ProgressView()
+                                                .scaleEffect(1.2)
+                                                .tint(.blue)
+                                        )
+                                }
+                                .frame(width: 200, height: 200)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                            } else {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(width: 200, height: 200)
+                                    .overlay(
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "person.circle")
+                                                .font(.system(size: 50))
+                                                .foregroundColor(.gray)
+                                            Text(languageManager.localizedString(for: "no_image"))
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+                                    )
+                            }
+                        }
+                        
+                        // Artist Info
                         VStack(spacing: 8) {
-                            Image(systemName: "speaker.slash")
-                                .font(.system(size: 24))
+                            Text("\(languageManager.localizedString(for: "genre_label")): \(artist.genre)")
+                                .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(.secondary)
-                            Text("No Preview Available")
-                                .font(.system(size: 14, weight: .medium))
+                            
+                            Text("\(languageManager.localizedString(for: "country_label")): \(artist.country)")
+                                .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(.secondary)
+                            
+                            Text("\(languageManager.localizedString(for: "debut_year_label")): \(formattedDebutYear)")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.secondary)
+                            
+                            // Audio Preview Button
+                            if let previewURL = artist.previewURL, !previewURL.isEmpty {
+                                Button(action: toggleAudioPlayback) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: isPlayingAudio ? "pause.fill" : "play.fill")
+                                            .font(.system(size: 16))
+                                        Text(isPlayingAudio ? languageManager.localizedString(for: "pause_preview") : languageManager.localizedString(for: "play_preview"))
+                                            .font(.system(size: 16, weight: .medium))
+                                    }
+                                    .foregroundColor(.blue)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(Color.blue.opacity(0.1))
+                                    .cornerRadius(20)
+                                }
+                                .disabled(audioLoadError != nil)
+                            }
+                            
+                            // Audio Error Message
+                            if let errorMessage = audioLoadError {
+                                Text(errorMessage)
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                                    .multilineTextAlignment(.center)
+                            }
                         }
                         .padding()
                         .background(
@@ -932,1255 +1133,219 @@ struct SuccessView: View {
                                 .fill(Color(.systemGray6))
                         )
                     }
-            }
-            
-            Spacer()
-            
-            Button("Close") {
-                    stopPlayback()
-                dismiss()
-            }
-                .font(.system(size: 18, weight: .medium))
-                .foregroundColor(.blue)
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(
-                    RoundedRectangle(cornerRadius: 25)
-                        .stroke(Color.blue, lineWidth: 2)
-                )
-                .padding(.horizontal, 40)
-        }
-        .padding()
-        }
-        .onAppear {
-            loadArtistData()
-        }
-        .onDisappear {
-            stopPlayback()
-        }
-    }
-    
-    // MARK: - Helper Methods
-    private func loadArtistData() {
-        // First check if we already have the image and preview URLs stored
-        if let storedImageURL = artist.imageURL, !storedImageURL.isEmpty {
-            artistImageURL = storedImageURL
-        }
-        
-        if let storedPreviewURL = artist.previewURL, !storedPreviewURL.isEmpty {
-            previewURL = storedPreviewURL
-            trackName = "Preview Track" // Default name
-            isLoadingData = false
-            return
-        }
-        
-        guard spotifyService.isAuthenticated else {
-            isLoadingData = false
-            return
-        }
-        
-        Task {
-            var spotifyId: String?
-            var imageURL: String?
-            var trackPreviewURL: String?
-            var songName: String?
-            
-            // If we have a Spotify ID, use it directly for more reliable data fetching
-            if let existingSpotifyId = artist.spotifyId, !existingSpotifyId.isEmpty {
-                spotifyId = existingSpotifyId
-                print("🎯 Using stored Spotify ID: \(existingSpotifyId)")
-                
-                // Get artist details
-                if let artistDetails = await spotifyService.getArtistDetails(id: existingSpotifyId) {
-                    imageURL = artistDetails.images.first?.url
-                }
-                
-                // Get top tracks for preview
-                let topTracks = await spotifyService.getArtistTopTracks(artistId: existingSpotifyId)
-                if let track = topTracks.first(where: { $0.preview_url != nil }) {
-                    trackPreviewURL = track.preview_url
-                    songName = track.name
-                }
-            } else {
-                // Fallback to search by name
-                print("🔍 Searching for artist by name: \(artist.name)")
-                if let artistData = await spotifyService.searchArtistWithDetails(name: artist.name) {
-                    spotifyId = artistData.artist.id
-                    imageURL = artistData.imageURL
-                    trackPreviewURL = artistData.previewURL
-                    
-                    // Get track name
-                    if let id = spotifyId {
-                        let topTracks = await spotifyService.getArtistTopTracks(artistId: id)
-                        if let track = topTracks.first(where: { $0.preview_url != nil }) {
-                            songName = track.name
-                        }
-                    }
-                }
-            }
-            
-            DispatchQueue.main.async {
-                self.artistImageURL = imageURL
-                self.previewURL = trackPreviewURL
-                self.trackName = songName
-                self.isLoadingData = false
-                
-                print("✅ Loaded artist data:")
-                print("   🖼️ Image URL: \(imageURL ?? "None")")
-                print("   🎵 Preview URL: \(trackPreviewURL ?? "None")")
-                print("   🎶 Track Name: \(songName ?? "None")")
-                print("   🔐 Spotify Auth: \(spotifyService.isAuthenticated)")
-            }
-        }
-    }
-    
-    private func togglePlayback() {
-        print("🎵 Toggle playback - Preview URL: \(previewURL ?? "None")")
-        guard let previewURL = previewURL, let url = URL(string: previewURL) else { 
-            print("❌ No valid preview URL available")
-            return 
-        }
-        
-        if isPlaying {
-            print("⏸️ Stopping playback")
-            stopPlayback()
-        } else {
-            print("▶️ Starting playback from: \(url.absoluteString)")
-            startPlayback(url: url)
-        }
-    }
-    
-    private func startPlayback(url: URL) {
-        print("🎧 Creating AVPlayer with URL: \(url)")
-        audioPlayer = AVPlayer(url: url)
-        
-        print("▶️ Starting playback...")
-        audioPlayer?.play()
-        isPlaying = true
-        
-        // Check player status after a brief delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            if let player = self.audioPlayer {
-                print("📊 Player status: \(player.status.rawValue)")
-                print("📊 Player rate: \(player.rate)")
-                if let error = player.error {
-                    print("❌ Player error: \(error)")
-                }
-                if let currentItem = player.currentItem {
-                    print("📊 Current item status: \(currentItem.status.rawValue)")
-                    if let itemError = currentItem.error {
-                        print("❌ Current item error: \(itemError)")
-                    }
-                }
-            }
-        }
-        
-        // Stop playback after 30 seconds (Spotify preview length)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
-            print("⏰ 30 seconds elapsed, stopping playback")
-            stopPlayback()
-        }
-        
-        // Monitor player status
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: audioPlayer?.currentItem,
-            queue: .main
-        ) { _ in
-            print("🏁 Playback finished naturally")
-            stopPlayback()
-        }
-    }
-    
-    private func stopPlayback() {
-        print("⏹️ Stopping playback")
-        audioPlayer?.pause()
-        audioPlayer = nil
-        isPlaying = false
-        NotificationCenter.default.removeObserver(self)
-        print("✅ Playback stopped and cleaned up")
-    }
-}
-
-// MARK: - Help View
-struct HelpView: View {
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("How to Play")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .padding(.bottom)
-                    
-                    VStack(alignment: .leading, spacing: 15) {
-                        HelpSectionView(
-                            title: "Objective",
-                            description: "Guess the daily featured artist in 10 attempts or less."
-                        )
-                        
-                        HelpSectionView(
-                            title: "Hints",
-                            description: "After each guess, you'll receive hints about the artist including their gender, country, debut year, genre, whether they're solo or in a group, and their Spotify popularity ranking."
-                        )
-                        
-                        HelpSectionView(
-                            title: "Color Coding",
-                            description: "🟢 Green: Correct information\n🟡 Yellow: Close but not exact\n⚪ Gray: Incorrect information"
-                        )
-                        
-                        HelpSectionView(
-                            title: "Daily Challenge",
-                            description: "A new artist is featured every day. Come back tomorrow for a new challenge!"
-                        )
-                    }
-                }
-                .padding()
-            }
-            .navigationTitle("Help")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Help Section View
-struct HelpSectionView: View {
-    let title: String
-    let description: String
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.headline)
-                .fontWeight(.semibold)
-            
-            Text(description)
-                .font(.body)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
-// MARK: - Music View (Genre Selection)
-struct MusicView: View {
-    @Environment(\.modelContext) private var modelContext
-    @State private var showGenreGame = false
-    @State private var selectedGenre: String = ""
-    
-    var body: some View {
-        NavigationView {
-            ZStack {
-                // Background
-                LinearGradient(
-                    colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.3)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 32) {
-                        // Header
-                        VStack(spacing: 12) {
-                            Text("Select a genre")
-                                .font(.system(size: 28, weight: .bold))
-                                .foregroundColor(.primary)
-                                .padding(.top, 20)
-                        }
-                        
-                        // Genre Grid
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 2), spacing: 20) {
-                            GenreCard(
-                                title: "Pop",
-                                gradient: LinearGradient(
-                                    colors: [Color(red: 1.0, green: 0.8, blue: 0.6), Color(red: 0.9, green: 0.7, blue: 0.5)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                icon: "music.note",
-                                description: "Natural Heartbeats"
-                            ) {
-                                selectedGenre = "Pop"
-                                showGenreGame = true
-                            }
-                            
-                            GenreCard(
-                                title: "Rock",
-                                gradient: LinearGradient(
-                                    colors: [Color(red: 0.2, green: 0.1, blue: 0.1), Color(red: 0.4, green: 0.2, blue: 0.1)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                icon: "bolt.fill",
-                                description: "Rock Music"
-                            ) {
-                                selectedGenre = "Rock"
-                                showGenreGame = true
-                            }
-                            
-                            GenreCard(
-                                title: "Hip Hop",
-                                gradient: LinearGradient(
-                                    colors: [Color(red: 0.1, green: 0.1, blue: 0.1), Color(red: 0.3, green: 0.3, blue: 0.3)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                icon: "mic",
-                                description: "Nunahop Natural"
-                            ) {
-                                selectedGenre = "Hip-Hop"
-                                showGenreGame = true
-                            }
-                            
-                            GenreCard(
-                                title: "Electronic",
-                                gradient: LinearGradient(
-                                    colors: [Color(red: 0.8, green: 0.9, blue: 0.6), Color(red: 0.4, green: 0.7, blue: 0.8)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                icon: "waveform",
-                                description: "Digital Waves"
-                            ) {
-                                selectedGenre = "Electronic"
-                                showGenreGame = true
-                            }
-                            
-                            GenreCard(
-                                title: "Classical",
-                                gradient: LinearGradient(
-                                    colors: [Color(red: 0.8, green: 0.6, blue: 0.3), Color(red: 0.9, green: 0.7, blue: 0.4)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                icon: "music.quarternote.3",
-                                description: "Classical Classics"
-                            ) {
-                                selectedGenre = "Classical"
-                                showGenreGame = true
-                            }
-                            
-                            GenreCard(
-                                title: "Country",
-                                gradient: LinearGradient(
-                                    colors: [Color(red: 0.2, green: 0.3, blue: 0.2), Color(red: 0.4, green: 0.5, blue: 0.3)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                icon: "leaf.fill",
-                                description: "Country Vibes"
-                            ) {
-                                selectedGenre = "Country"
-                                showGenreGame = true
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        
-                        Spacer(minLength: 40)
-                    }
-                }
-            }
-            .navigationTitle("Music")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .fullScreenCover(isPresented: $showGenreGame) {
-            GenreGameView(genre: selectedGenre)
-        }
-    }
-}
-
-// MARK: - Genre Card
-struct GenreCard: View {
-    let title: String
-    let gradient: LinearGradient
-    let icon: String
-    let description: String
-    let action: () -> Void
-    @State private var isPressed = false
-    
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 0) {
-                // Card Image Area
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(gradient)
-                        .frame(height: 140)
-                        .overlay(
-            VStack {
-                                Spacer()
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(title.uppercased())
-                                            .font(.system(size: 12, weight: .bold, design: .default))
-                                            .foregroundColor(.white)
-                                        
-                                        Text(description)
-                                            .font(.system(size: 10, weight: .medium))
-                                            .foregroundColor(.white.opacity(0.8))
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    Image(systemName: icon)
-                                        .font(.system(size: 24, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.9))
-                                }
-                                .padding(16)
-                            }
-                        )
-                }
-                
-                // Genre Title
-                Text(title)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .padding(.top, 12)
-                    .padding(.bottom, 8)
-            }
-        }
-        .buttonStyle(PlainButtonStyle())
-        .scaleEffect(isPressed ? 0.95 : 1.0)
-        .animation(.easeInOut(duration: 0.1), value: isPressed)
-        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
-            isPressed = pressing
-        }, perform: {})
-    }
-}
-
-// MARK: - Genre Game View
-struct GenreGameView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    let genre: String
-    @State private var gameManager: GameManager?
-    @State private var searchText = ""
-    @State private var showSuccessView = false
-    @State private var searchResults: [Artist] = []
-    @State private var showSearchResults = false
-    @State private var animateHints = false
-    @State private var refreshID = UUID()
-    
-    var body: some View {
-        ZStack {
-            // Background
-            LinearGradient(
-                colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.3)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-            
-            VStack(spacing: 0) {
-                // Header with Close Button
-                HStack {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                            .font(.title2)
-                            .foregroundColor(.primary)
-                            .frame(width: 32, height: 32)
-                            .background(Color(.systemGray5))
-                            .clipShape(Circle())
-                    }
                     
                     Spacer()
                     
-                    Button("New Game") {
-                        print("🔴 New Genre Game button tapped")
-                        
-                        // Reset UI state immediately
-                        animateHints = false
-                        searchText = ""
-                        showSearchResults = false
-                        
-                        // Create new genre game
-                        gameManager?.createNewGenreGame(genre: genre)
-                        
-                        // Force view refresh and restart animations
-                        refreshID = UUID()
-                        
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            withAnimation {
-                                animateHints = true
-                            }
-                        }
+                    Button(languageManager.localizedString(for: "close")) {
+                        dismiss()
                     }
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 18, weight: .medium))
                     .foregroundColor(.blue)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color(.systemGray5))
-                    .cornerRadius(8)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                
-                ScrollView {
-                    VStack(spacing: 32) {
-                        // Title Section
-                        VStack(spacing: 12) {
-                            Text("Guess the \(genre) Artist")
-                                .font(.system(size: 28, weight: .bold, design: .default))
-                                .foregroundColor(.primary)
-                                .opacity(animateHints ? 1 : 0)
-                                .offset(y: animateHints ? 0 : -20)
-                                .animation(.easeOut(duration: 0.8).delay(0.1), value: animateHints)
-                            
-                            Text("Can you identify this \(genre.lowercased()) artist?")
-                                .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.secondary)
-                                .opacity(animateHints ? 1 : 0)
-                                .offset(y: animateHints ? 0 : -20)
-                                .animation(.easeOut(duration: 0.8).delay(0.2), value: animateHints)
-            }
-                        .padding(.top, 20)
-                        
-                        // Input Section
-                        VStack(spacing: 16) {
-                            // Search Bar
-                            VStack(alignment: .leading, spacing: 0) {
-                                HStack(spacing: 12) {
-                                    TextField("Enter your guess", text: $searchText)
-                                        .font(.system(size: 16, weight: .medium))
-                                        .padding(.horizontal, 20)
-                                        .padding(.vertical, 16)
-                                        .background(Color(.systemGray6))
-                                        .cornerRadius(25)
-                                        .onChange(of: searchText) { _, newValue in
-                                            updateSearchResults(newValue)
-                                        }
-                                        .onSubmit {
-                                            submitGuess()
-                                        }
-                                        .opacity(animateHints ? 1 : 0)
-                                        .offset(y: animateHints ? 0 : 20)
-                                        .animation(.easeOut(duration: 0.8).delay(0.3), value: animateHints)
-                                }
-                                
-                                // Search Results Dropdown
-                                if showSearchResults && !searchResults.isEmpty {
-                                    VStack(spacing: 0) {
-                                        ForEach(searchResults, id: \.id) { artist in
-                                            Button(action: {
-                                                searchText = artist.name
-                                                showSearchResults = false
-                                            }) {
-                                                HStack {
-                                                    Text(artist.name)
-                                                        .font(.system(size: 16, weight: .medium))
-                                                        .foregroundColor(.primary)
-                                                    Spacer()
-                                                }
-                                                .padding(.horizontal, 20)
-                                                .padding(.vertical, 12)
-                                                .background(Color(.systemBackground))
-                                            }
-                                            .buttonStyle(PlainButtonStyle())
-                                            
-                                            if artist.id != searchResults.last?.id {
-                                                Divider()
-                                                    .padding(.horizontal, 20)
-                                            }
-                                        }
-                                    }
-                                    .background(Color(.systemBackground))
-                                    .cornerRadius(12)
-                                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-                                    .padding(.top, 8)
-                                }
-                            }
-                            
-                            // Submit Button
-                            Button(action: submitGuess) {
-                                Text("Submit Guess")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 50)
-                                    .background(submitButtonBackground)
-                                    .scaleEffect(searchText.isEmpty ? 0.98 : 1.0)
-                                    .animation(.easeInOut(duration: 0.2), value: searchText.isEmpty)
-                            }
-                            .disabled(searchText.isEmpty)
-                            .opacity(animateHints ? 1 : 0)
-                            .offset(y: animateHints ? 0 : 20)
-                            .animation(.easeOut(duration: 0.8).delay(0.4), value: animateHints)
-                        }
-                        .padding(.horizontal, 20)
-                        
-                        // Remaining Guesses
-                        if let game = gameManager?.currentGame {
-                            Text("Remaining Guesses: \(game.attemptsRemaining)")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.secondary)
-                                .opacity(animateHints ? 1 : 0)
-                                .offset(y: animateHints ? 0 : 20)
-                                .animation(.easeOut(duration: 0.8).delay(0.5), value: animateHints)
-        }
-                        
-                        // Previous Guesses
-                        if let game = gameManager?.currentGame, !game.currentGuesses.isEmpty {
-                            VStack(alignment: .leading, spacing: 16) {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Your Guesses")
-                                        .font(.system(size: 20, weight: .bold))
-                                        .foregroundColor(.primary)
-                                    
-                                    Text("🟢 Correct  🟡 Close  ⚪ Wrong")
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding(.horizontal, 20)
-                                
-                                // Display guesses in reverse chronological order (newest first)
-                                ForEach(0..<game.currentGuesses.count, id: \.self) { index in
-                                    let reverseIndex = game.currentGuesses.count - 1 - index
-                                    let guess = game.currentGuesses[reverseIndex]
-                                    let guessNumber = reverseIndex + 1
-                                    PreviousGuessView(guess: guess, index: guessNumber)
-                                        .padding(.horizontal, 20)
-                                }
-                            }
-                        }
-                        
-                        // Game Over Message
-                        if let game = gameManager?.currentGame, game.isCompleted {
-                            GameOverView(
-                                isWon: game.isWon,
-                                targetArtist: gameManager?.targetArtist,
-                                onViewResult: { showSuccessView = true }
-                            )
-                            .padding(.horizontal, 20)
-                        }
-                        
-                        Spacer(minLength: 40)
-                    }
-                }
-            }
-        }
-        .onAppear {
-            if gameManager == nil {
-                gameManager = GameManager(modelContext: modelContext)
-                gameManager?.createNewGenreGame(genre: genre)
-            }
-            
-            // Trigger animations
-            withAnimation {
-                animateHints = true
-            }
-        }
-        .fullScreenCover(isPresented: $showSuccessView) {
-            if let targetArtist = gameManager?.targetArtist {
-                SuccessView(
-                    artist: targetArtist,
-                    isWon: gameManager?.currentGame?.isWon ?? false
-                )
-            }
-        }
-        .onTapGesture {
-            showSearchResults = false
-        }
-        .id(refreshID)
-    }
-    
-    // MARK: - Computed Properties
-    private var submitButtonBackground: some View {
-        let isDisabled = searchText.isEmpty
-        
-        return RoundedRectangle(cornerRadius: 25)
-            .fill(
-                LinearGradient(
-                    colors: isDisabled 
-                        ? [Color.gray.opacity(0.6), Color.gray.opacity(0.4)]
-                        : [Color.blue, Color.blue.opacity(0.8)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-    }
-    
-    private func updateSearchResults(_ query: String) {
-        if query.isEmpty {
-            searchResults = []
-            showSearchResults = false
-        } else {
-            // Filter search results by genre
-            let allResults = gameManager?.searchArtists(query: query) ?? []
-            searchResults = allResults.filter { artist in
-                artist.genre.lowercased().contains(genre.lowercased()) ||
-                areGenresRelated(artist.genre, genre)
-            }
-            showSearchResults = !searchResults.isEmpty
-        }
-    }
-    
-    private func areGenresRelated(_ artistGenre: String, _ targetGenre: String) -> Bool {
-        let relatedGenres: [String: [String]] = [
-            "Pop": ["Pop", "Alternative", "Indie Pop", "Electropop"],
-            "Rock": ["Rock", "Alternative Rock", "Indie Rock", "Pop Rock"],
-            "Hip-Hop": ["Hip-Hop", "R&B", "Rap", "Soul"],
-            "Electronic": ["Electronic", "Dance", "EDM", "House"],
-            "Classical": ["Classical", "Jazz", "Blues", "Opera"],
-            "Country": ["Country", "Folk", "Americana", "Bluegrass"]
-        ]
-        
-        if let related = relatedGenres[targetGenre] {
-            return related.contains(artistGenre)
-        }
-        return artistGenre.lowercased() == targetGenre.lowercased()
-    }
-    
-    private func submitGuess() {
-        guard !searchText.isEmpty else { return }
-        
-        Task {
-            if let guess = await gameManager?.submitGuess(searchText) {
-                await MainActor.run {
-                    searchText = ""
-                    showSearchResults = false
-                    
-                    if guess.isCorrect {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            showSuccessView = true
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Profile View
-struct ProfileView: View {
-    @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject private var themeManager: ThemeManager
-    @StateObject private var profileManager = UserProfileManager()
-    @State private var userStats = UserStats()
-    @State private var showEditProfile = false
-    
-    var body: some View {
-        NavigationView {
-            ZStack {
-                // Background
-                LinearGradient(
-                    colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.3)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 32) {
-                        // Profile Header
-                        VStack(spacing: 20) {
-                            // Avatar with Memoji
-                            ZStack {
-                                Circle()
-                                    .fill(Color(.systemGray6))
-                                    .frame(width: 120, height: 120)
-                                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-                                
-                                Text(profileManager.selectedMemoji)
-                                    .font(.system(size: 60))
-                                    .scaleEffect(1.1)
-                            }
-                            
-                            // User Info
-                            VStack(spacing: 8) {
-                                Text(profileManager.username)
-                                    .font(.system(size: 24, weight: .bold))
-                                    .foregroundColor(.primary)
-                
-                                Text("@\(profileManager.handle)")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            // Edit Profile Button
-                            Button(action: {
-                                showEditProfile = true
-                            }) {
-                                Text("Edit Profile")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 44)
-                                    .background(Color(.systemGray5))
-                                    .cornerRadius(22)
-                            }
-                            .padding(.horizontal, 40)
-                        }
-                        .padding(.top, 20)
-                        
-                        // Statistics Section
-                        VStack(spacing: 16) {
-                            HStack(spacing: 16) {
-                                StatCard(
-                                    value: "\(userStats.totalGames)",
-                                    label: "Total Games"
-                                )
-                                
-                                StatCard(
-                                    value: "\(userStats.correctGuesses)",
-                                    label: "Correct\nGuesses"
-                                )
-                                
-                                StatCard(
-                                    value: "\(userStats.winRate)%",
-                                    label: "Win\nRate"
-                                )
-                            }
-                            .padding(.horizontal, 20)
-                        }
-                        
-                        // Settings Section
-                        VStack(spacing: 20) {
-                            HStack {
-                                Text("Settings")
-                                    .font(.system(size: 20, weight: .bold))
-                                    .foregroundColor(.primary)
-                                Spacer()
-                            }
-                            .padding(.horizontal, 20)
-                            
-                            // Dark Mode Toggle
-                            VStack(spacing: 0) {
-                                HStack {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: themeManager.isDarkMode ? "moon.fill" : "sun.max.fill")
-                                            .font(.system(size: 20, weight: .medium))
-                                            .foregroundColor(themeManager.isDarkMode ? .blue : .orange)
-                                        
-                                        Text("Dark Mode")
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundColor(.primary)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    Toggle("", isOn: $themeManager.isDarkMode)
-                                        .labelsHidden()
-                                }
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 16)
-                            }
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color(.systemBackground))
-                                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-                            )
-                            .padding(.horizontal, 20)
-                        }
-                        .padding(.top, 32)
-                        
-                        Spacer(minLength: 40)
-                    }
-                }
-            }
-            .navigationTitle("Profile")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .onAppear {
-            calculateUserStats()
-        }
-        .sheet(isPresented: $showEditProfile) {
-            EditProfileView(profileManager: profileManager)
-        }
-    }
-    
-    private func calculateUserStats() {
-        do {
-            let descriptor = FetchDescriptor<GameState>()
-            let allGames = try modelContext.fetch(descriptor)
-            
-            let totalGames = allGames.count
-            let wonGames = allGames.filter { $0.isWon }.count
-            let totalGuesses = allGames.flatMap { $0.currentGuesses }.count
-            let correctGuesses = allGames.flatMap { $0.currentGuesses }.filter { $0.isCorrect }.count
-            let winRate = totalGames > 0 ? Int((Double(wonGames) / Double(totalGames)) * 100) : 0
-            
-            userStats = UserStats(
-                totalGames: totalGames,
-                correctGuesses: correctGuesses,
-                winRate: winRate,
-                totalGuesses: totalGuesses,
-                wonGames: wonGames
-            )
-        } catch {
-            print("Error calculating stats: \(error)")
-        }
-    }
-}
-
-// MARK: - Stat Card
-struct StatCard: View {
-    let value: String
-    let label: String
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            Text(value)
-                .font(.system(size: 32, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
-            
-            Text(label)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 100)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-        )
-    }
-}
-
-// MARK: - User Stats Model
-struct UserStats {
-    var totalGames: Int = 0
-    var correctGuesses: Int = 0
-    var winRate: Int = 0
-    var totalGuesses: Int = 0
-    var wonGames: Int = 0
-}
-
-// MARK: - User Profile Manager
-class UserProfileManager: ObservableObject {
-    @Published var username: String {
-        didSet {
-            UserDefaults.standard.set(username, forKey: "username")
-        }
-    }
-    
-    @Published var handle: String {
-        didSet {
-            UserDefaults.standard.set(handle, forKey: "handle")
-        }
-    }
-    
-    @Published var selectedMemoji: String {
-        didSet {
-            UserDefaults.standard.set(selectedMemoji, forKey: "selectedMemoji")
-        }
-    }
-    
-    init() {
-        self.username = UserDefaults.standard.string(forKey: "username") ?? "MusicFan2023"
-        self.handle = UserDefaults.standard.string(forKey: "handle") ?? "musicfan2023"
-        self.selectedMemoji = UserDefaults.standard.string(forKey: "selectedMemoji") ?? "🧑‍💼"
-    }
-    
-    static let availableMemojis = [
-        // Business & Professional
-        "🧑‍💼", "👨‍💼", "👩‍💼", "🕴️", "💼",
-        
-        // Creative & Artistic
-        "🧑‍🎨", "👨‍🎨", "👩‍🎨", "🎭", "🎨", "🎤", "🎸", "🎹", "🎺", "🎻",
-        
-        // Casual & Fun
-        "😊", "😎", "🤠", "🥳", "🤓", "😋", "🙃", "😇", "🤗", "🫡",
-        
-        // Animals & Characters
-        "🐶", "🐱", "🐸", "🐹", "🦊", "🐻", "🐼", "🐨", "🦁", "🐯",
-        
-        // Music Related
-        "🎵", "🎶", "🎼", "🎙️", "📻", "🎧", "🔊", "🎪", "🌟", "⭐",
-        
-        // Diverse People
-        "👶", "🧒", "👦", "👧", "🧑", "👨", "👩", "🧓", "👴", "👵",
-        
-        // Hair Styles & Looks
-        "👨‍🦰", "👩‍🦰", "👨‍🦱", "👩‍🦱", "👨‍🦳", "👩‍🦳", "👨‍🦲", "👩‍🦲",
-        
-        // Fun Objects
-        "🎯", "🚀", "⚡", "🔥", "💎", "🏆", "🎮", "📱", "💻", "🎲"
-    ]
-}
-
-// MARK: - Memoji Manager
-class MemojiManager: ObservableObject {
-    @Published var selectedMemoji: String {
-        didSet {
-            UserDefaults.standard.set(selectedMemoji, forKey: "selectedMemoji")
-        }
-    }
-    
-    init() {
-        self.selectedMemoji = UserDefaults.standard.string(forKey: "selectedMemoji") ?? "🧑‍💼"
-    }
-    
-    static let availableMemojis = [
-        // Business & Professional
-        "🧑‍💼", "👨‍💼", "👩‍💼", "🕴️", "💼",
-        
-        // Creative & Artistic
-        "🧑‍🎨", "👨‍🎨", "👩‍🎨", "🎭", "🎨", "🎤", "🎸", "🎹", "🎺", "🎻",
-        
-        // Casual & Fun
-        "😊", "😎", "🤠", "🥳", "🤓", "😋", "🙃", "😇", "🤗", "🫡",
-        
-        // Animals & Characters
-        "🐶", "🐱", "🐸", "🐹", "🦊", "🐻", "🐼", "🐨", "🦁", "🐯",
-        
-        // Music Related
-        "🎵", "🎶", "🎼", "🎙️", "📻", "🎧", "🔊", "🎪", "🌟", "⭐",
-        
-        // Diverse People
-        "👶", "🧒", "👦", "👧", "🧑", "👨", "👩", "🧓", "👴", "👵",
-        
-        // Hair Styles & Looks
-        "👨‍🦰", "👩‍🦰", "👨‍🦱", "👩‍🦱", "👨‍🦳", "👩‍🦳", "👨‍🦲", "👩‍🦲",
-        
-        // Fun Objects
-        "🎯", "🚀", "⚡", "🔥", "💎", "🏆", "🎮", "📱", "💻", "🎲"
-    ]
-}
-
-// MARK: - Memoji Picker View
-struct MemojiPickerView: View {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject var profileManager: UserProfileManager
-    @State private var selectedMemoji: String
-    
-    init(profileManager: UserProfileManager) {
-        self.profileManager = profileManager
-        _selectedMemoji = State(initialValue: profileManager.selectedMemoji)
-    }
-    
-    let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: 5)
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 24) {
-                // Preview Section
-                VStack(spacing: 16) {
-                    Text("Preview")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                    
-                    // Large preview of selected memoji
-                    Text(selectedMemoji)
-                        .font(.system(size: 80))
-                        .frame(width: 120, height: 120)
-                        .background(
-                            Circle()
-                                .fill(Color(.systemGray6))
-                                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-                        )
-                        .scaleEffect(1.1)
-                        .animation(.bouncy(duration: 0.3), value: selectedMemoji)
-                }
-                .padding(.top, 20)
-                
-                // Memoji Grid
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(UserProfileManager.availableMemojis, id: \.self) { memoji in
-                            Button(action: {
-                                selectedMemoji = memoji
-                                HapticManager.impact(.light)
-                            }) {
-                                Text(memoji)
-                                    .font(.system(size: 32))
-                                    .frame(width: 56, height: 56)
-                                    .background(
-                                        Circle()
-                                            .fill(selectedMemoji == memoji ? Color.blue.opacity(0.2) : Color(.systemGray6))
-                                            .overlay(
-                                                Circle()
-                                                    .stroke(selectedMemoji == memoji ? Color.blue : Color.clear, lineWidth: 2)
-                                            )
-                                    )
-                                    .scaleEffect(selectedMemoji == memoji ? 1.1 : 1.0)
-                                    .animation(.bouncy(duration: 0.2), value: selectedMemoji)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
-                
-                // Save Button
-                Button(action: {
-                    profileManager.selectedMemoji = selectedMemoji
-                    HapticManager.impact(.medium)
-                    dismiss()
-                }) {
-                    Text("Save Memoji")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(
-                            LinearGradient(
-                                colors: [Color.blue, Color.blue.opacity(0.8)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .cornerRadius(25)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 20)
-            }
-            .navigationTitle("Choose Memoji")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Haptic Manager
-struct HapticManager {
-    static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        let impactFeedback = UIImpactFeedbackGenerator(style: style)
-        impactFeedback.impactOccurred()
-    }
-}
-
-// MARK: - Edit Profile View
-struct EditProfileView: View {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject var profileManager: UserProfileManager
-    @State private var showMemojiPicker = false
-    @State private var tempUsername: String
-    @State private var tempHandle: String
-    
-    init(profileManager: UserProfileManager) {
-        self.profileManager = profileManager
-        _tempUsername = State(initialValue: profileManager.username)
-        _tempHandle = State(initialValue: profileManager.handle)
-    }
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 24) {
-                // Avatar Section
-                VStack(spacing: 16) {
-                    Button(action: {
-                        showMemojiPicker = true
-                        HapticManager.impact(.light)
-                    }) {
-                        ZStack {
-                            Circle()
-                                .fill(Color(.systemGray6))
-                                .frame(width: 100, height: 100)
-                                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-                            
-                            Text(profileManager.selectedMemoji)
-                                .font(.system(size: 50))
-                        }
-                        .overlay(
-                            // Edit indicator
-                            Circle()
-                                .fill(Color.blue)
-                                .frame(width: 28, height: 28)
-                                .overlay(
-                                    Image(systemName: "pencil")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(.white)
-                                )
-                                .offset(x: 30, y: 30)
-                        )
-                    }
-                    
-                    Text("Tap to change Memoji")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.blue)
-                }
-                .padding(.top, 20)
-                
-                // Form Fields
-                VStack(spacing: 20) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Username")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.primary)
-                        
-                        TextField("Username", text: $tempUsername)
-                            .font(.system(size: 16))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(12)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Handle")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.primary)
-                        
-                        TextField("Handle", text: $tempHandle)
-                            .font(.system(size: 16))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(12)
-                    }
-                }
-                .padding(.horizontal, 20)
-                
-                Spacer()
-                
-                // Save Button
-                Button("Save Changes") {
-                    // Save the changes to the profile manager
-                    profileManager.username = tempUsername
-                    profileManager.handle = tempHandle
-                    HapticManager.impact(.medium)
-                    dismiss()
-                }
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(
-                    LinearGradient(
-                        colors: [Color.blue, Color.blue.opacity(0.8)],
-                        startPoint: .leading,
-                        endPoint: .trailing
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(
+                        RoundedRectangle(cornerRadius: 25)
+                            .stroke(Color.blue, lineWidth: 2)
                     )
-                )
-                .cornerRadius(25)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 20)
+                    .padding(.horizontal, 40)
+                }
+                .padding()
             }
-            .navigationTitle("Edit Profile")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
+            .onAppear {
+                loadArtistData()
+            }
+            .onDisappear {
+                stopAudioPlayback()
+            }
+        }
+        
+        // MARK: - Computed Properties
+        private var formattedDebutYear: String {
+            // Ensure debut year is formatted as a proper integer year
+            let year = max(1900, min(2025, artist.debutYear)) // Clamp to reasonable range
+            return String(year)
+        }
+        
+        // MARK: - Helper Methods
+        private func loadArtistData() {
+            print("🎵 Loading artist data for: \(artist.name)")
+            print("🎵 Artist previewURL: \(artist.previewURL ?? "nil")")
+            
+            // Load image URL if available from Firestore
+            if let storedImageURL = artist.imageURL, !storedImageURL.isEmpty {
+                // Validate URL format
+                if storedImageURL.hasPrefix("http") || storedImageURL.hasPrefix("https") {
+                    artistImageURL = storedImageURL
+                    print("🖼️ Set artist image URL: \(storedImageURL)")
+                }
+            }
+            
+            // Initialize audio player if preview URL is available
+            if let previewURL = artist.previewURL, !previewURL.isEmpty {
+                print("🎵 Setting up audio player with URL: \(previewURL)")
+                setupAudioPlayer(with: previewURL)
+            } else {
+                print("🎵 No preview URL available for artist: \(artist.name)")
+            }
+            
+            isLoadingData = false
+        }
+        
+        private func setupAudioPlayer(with urlString: String) {
+            guard let url = URL(string: urlString) else {
+                audioLoadError = "Invalid audio URL"
+                return
+            }
+            
+            audioPlayer = AVPlayer(url: url)
+            audioLoadError = nil
+            
+            // Add observer for playback completion
+            NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime,
+                object: audioPlayer?.currentItem,
+                queue: .main
+            ) { _ in
+                isPlayingAudio = false
+            }
+        }
+        
+        private func toggleAudioPlayback() {
+            guard let player = audioPlayer else { return }
+            
+            if isPlayingAudio {
+                player.pause()
+                isPlayingAudio = false
+            } else {
+                player.play()
+                isPlayingAudio = true
+            }
+        }
+        
+        private func stopAudioPlayback() {
+            audioPlayer?.pause()
+            audioPlayer = nil
+            isPlayingAudio = false
+            NotificationCenter.default.removeObserver(self)
+        }
+        
+        private func showInterstitialAdAndReset() {
+            guard let rootViewController = getRootViewController() else {
+                // If can't get root view controller, proceed without ad
+                resetGame()
+                return
+            }
+            
+            adMobManager.showInterstitialAd(from: rootViewController) {
+                // This closure is called when the ad is dismissed or if ad fails to load
+                DispatchQueue.main.async {
+                    self.resetGame()
                 }
             }
         }
-        .sheet(isPresented: $showMemojiPicker) {
-            MemojiPickerView(profileManager: profileManager)
+        
+        private func resetGame() {
+            // Reset the daily game completion state
+            isDailyGameCompleted = false
+            
+            // Reset the game in GameManager
+            gameManager?.resetGame()
+            
+            // Dismiss the success view and immediately present the new game
+            dismiss()
+            
+            // Present the new game view after a short delay to ensure dismissal is complete
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                // Use NotificationCenter to notify HomeView to update gameInstanceId
+                NotificationCenter.default.post(name: Notification.Name("StartNewGameInstance"), object: nil)
+                showGameView = true
+            }
         }
     }
-}
-
-#Preview {
-    MainView()
-        .modelContainer(for: [Artist.self, Guess.self, GameState.self], inMemory: true)
-}
+    
+    // MARK: - Help View
+    struct HelpView: View {
+        @Environment(\.dismiss) private var dismiss
+        @ObservedObject private var languageManager = LanguageManager.shared
+        
+        var body: some View {
+            NavigationView {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        Text(languageManager.localizedString(for: "how_to_play"))
+                            .font(.title)
+                            .fontWeight(.bold)
+                            .padding(.bottom)
+                        
+                        VStack(alignment: .leading, spacing: 15) {
+                            HelpSectionView(
+                                title: languageManager.localizedString(for: "objective"),
+                                description: languageManager.localizedString(for: "objective_description")
+                            )
+                            
+                            HelpSectionView(
+                                title: languageManager.localizedString(for: "hints"),
+                                description: languageManager.localizedString(for: "hints_description")
+                            )
+                            
+                            HelpSectionView(
+                                title: languageManager.localizedString(for: "color_coding"),
+                                description: languageManager.localizedString(for: "color_coding_description")
+                            )
+                            
+                            HelpSectionView(
+                                title: languageManager.localizedString(for: "daily_challenge"),
+                                description: languageManager.localizedString(for: "daily_challenge_description")
+                            )
+                        }
+                    }
+                    .padding()
+                }
+                .navigationTitle(languageManager.localizedString(for: "help"))
+#if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+#endif
+                .toolbar {
+#if os(iOS)
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(languageManager.localizedString(for: "done")) {
+                            dismiss()
+                        }
+                    }
+#else
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(languageManager.localizedString(for: "done")) {
+                            dismiss()
+                        }
+                    }
+#endif
+                }
+            }
+        }
+    }
+    
+    // MARK: - Help Section View
+    struct HelpSectionView: View {
+        let title: String
+        let description: String
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Text(description)
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+    
+    // MARK: - Previews
+    struct ContentView_Previews: PreviewProvider {
+        static var previews: some View {
+            MainView()
+        }
+    }

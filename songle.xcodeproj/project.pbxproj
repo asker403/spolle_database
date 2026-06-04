@@ -6,6 +6,27 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1113119B2E36147B006A87B9 /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = 1113119A2E36147B006A87B9 /* GoogleMobileAds */; };
+		11946B682E214592005E4F7E /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 112F66052E1EFCB40025BCBB /* FirebaseFirestore */; };
+		ADE287012E15266B00DBC7B7 /* SpolleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286F22E15266B00DBC7B7 /* SpolleApp.swift */; };
+		ADE287022E15266B00DBC7B7 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286F32E15266B00DBC7B7 /* ContentView.swift */; };
+		ADE287032E15266B00DBC7B7 /* AdMobManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286F42E15266B00DBC7B7 /* AdMobManager.swift */; };
+		ADE287042E15266B00DBC7B7 /* LanguageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286F52E15266B00DBC7B7 /* LanguageManager.swift */; };
+		ADE287052E15266B00DBC7B7 /* LanguageSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286F62E15266B00DBC7B7 /* LanguageSelectionView.swift */; };
+		ADE287062E15266B00DBC7B7 /* MultiplayerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286F72E15266B00DBC7B7 /* MultiplayerViews.swift */; };
+		ADE287072E15266B00DBC7B7 /* MultiplayerGameManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286F82E15266B00DBC7B7 /* MultiplayerGameManager.swift */; };
+		ADE287082E15266B00DBC7B7 /* GameManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286F92E15266B00DBC7B7 /* GameManager.swift */; };
+		ADE287092E15266B00DBC7B7 /* AppRatingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286FA2E15266B00DBC7B7 /* AppRatingManager.swift */; };
+		ADE2870A2E15266B00DBC7B7 /* RatingPromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286FB2E15266B00DBC7B7 /* RatingPromptView.swift */; };
+		ADE2870B2E15266B00DBC7B7 /* FirestoreService.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286FC2E15266B00DBC7B7 /* FirestoreService.swift */; };
+		ADE2870C2E15266B00DBC7B7 /* SpotifyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286FD2E15266B00DBC7B7 /* SpotifyService.swift */; };
+		ADE2870D2E15266B00DBC7B7 /* Item.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286FE2E15266B00DBC7B7 /* Item.swift */; };
+		ADE2870E2E15266B00DBC7B7 /* SpotifySetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE286FF2E15266B00DBC7B7 /* SpotifySetupView.swift */; };
+		ADE287102E15266B00DBC7B7 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = ADE2870F2E15266B00DBC7B7 /* GoogleService-Info.plist */; };
+		ADE287122E15266B00DBC7B7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ADE287112E15266B00DBC7B7 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		ADE286D52E15266B00DBC7B7 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,14 +45,52 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		ADE286C42E15266800DBC7B7 /* songle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = songle.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		ADE286D42E15266B00DBC7B7 /* songleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = songleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		ADE286DE2E15266B00DBC7B7 /* songleUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = songleUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		ADE286C42E15266800DBC7B7 /* Spolle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Spolle.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ADE286D42E15266B00DBC7B7 /* SpolleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SpolleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		ADE286DE2E15266B00DBC7B7 /* SpolleUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SpolleUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		ADE286F12E15266B00DBC7B7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		ADE286F22E15266B00DBC7B7 /* SpolleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpolleApp.swift; sourceTree = "<group>"; };
+		ADE286F32E15266B00DBC7B7 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		ADE286F42E15266B00DBC7B7 /* AdMobManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdMobManager.swift; sourceTree = "<group>"; };
+		ADE286F52E15266B00DBC7B7 /* LanguageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageManager.swift; sourceTree = "<group>"; };
+		ADE286F62E15266B00DBC7B7 /* LanguageSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSelectionView.swift; sourceTree = "<group>"; };
+		ADE286F72E15266B00DBC7B7 /* MultiplayerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiplayerViews.swift; sourceTree = "<group>"; };
+		ADE286F82E15266B00DBC7B7 /* MultiplayerGameManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiplayerGameManager.swift; sourceTree = "<group>"; };
+		ADE286F92E15266B00DBC7B7 /* GameManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameManager.swift; sourceTree = "<group>"; };
+		ADE286FA2E15266B00DBC7B7 /* AppRatingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRatingManager.swift; sourceTree = "<group>"; };
+		ADE286FB2E15266B00DBC7B7 /* RatingPromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RatingPromptView.swift; sourceTree = "<group>"; };
+		ADE286FC2E15266B00DBC7B7 /* FirestoreService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirestoreService.swift; sourceTree = "<group>"; };
+		ADE286FD2E15266B00DBC7B7 /* SpotifyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyService.swift; sourceTree = "<group>"; };
+		ADE286FE2E15266B00DBC7B7 /* Item.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Item.swift; sourceTree = "<group>"; };
+		ADE286FF2E15266B00DBC7B7 /* SpotifySetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifySetupView.swift; sourceTree = "<group>"; };
+		ADE287002E15266B00DBC7B7 /* Spolle.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Spolle.entitlements; sourceTree = "<group>"; };
+		ADE2870F2E15266B00DBC7B7 /* GoogleService-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		ADE287112E15266B00DBC7B7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		ADE286C62E15266800DBC7B7 /* songle */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
+			isa = PBXGroup;
+			children = (
+				ADE286F12E15266B00DBC7B7 /* Info.plist */,
+				ADE286F22E15266B00DBC7B7 /* SpolleApp.swift */,
+				ADE286F32E15266B00DBC7B7 /* ContentView.swift */,
+				ADE286F42E15266B00DBC7B7 /* AdMobManager.swift */,
+				ADE286F52E15266B00DBC7B7 /* LanguageManager.swift */,
+				ADE286F62E15266B00DBC7B7 /* LanguageSelectionView.swift */,
+				ADE286F72E15266B00DBC7B7 /* MultiplayerViews.swift */,
+				ADE286F82E15266B00DBC7B7 /* MultiplayerGameManager.swift */,
+				ADE286F92E15266B00DBC7B7 /* GameManager.swift */,
+				ADE286FA2E15266B00DBC7B7 /* AppRatingManager.swift */,
+				ADE286FB2E15266B00DBC7B7 /* RatingPromptView.swift */,
+				ADE286FC2E15266B00DBC7B7 /* FirestoreService.swift */,
+				ADE286FD2E15266B00DBC7B7 /* SpotifyService.swift */,
+				ADE286FE2E15266B00DBC7B7 /* Item.swift */,
+				ADE286FF2E15266B00DBC7B7 /* SpotifySetupView.swift */,
+				ADE287002E15266B00DBC7B7 /* Spolle.entitlements */,
+				ADE2870F2E15266B00DBC7B7 /* GoogleService-Info.plist */,
+				ADE287112E15266B00DBC7B7 /* Assets.xcassets */,
+			);
 			path = songle;
 			sourceTree = "<group>";
 		};
@@ -52,6 +111,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				11946B682E214592005E4F7E /* FirebaseFirestore in Frameworks */,
+				1113119B2E36147B006A87B9 /* GoogleMobileAds in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -85,9 +146,9 @@
 		ADE286C52E15266800DBC7B7 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				ADE286C42E15266800DBC7B7 /* songle.app */,
-				ADE286D42E15266B00DBC7B7 /* songleTests.xctest */,
-				ADE286DE2E15266B00DBC7B7 /* songleUITests.xctest */,
+				ADE286C42E15266800DBC7B7 /* Spolle.app */,
+				ADE286D42E15266B00DBC7B7 /* SpolleTests.xctest */,
+				ADE286DE2E15266B00DBC7B7 /* SpolleUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,9 +156,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		ADE286C32E15266800DBC7B7 /* songle */ = {
+		ADE286C32E15266800DBC7B7 /* Spolle */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = ADE286E82E15266B00DBC7B7 /* Build configuration list for PBXNativeTarget "songle" */;
+			buildConfigurationList = ADE286E82E15266B00DBC7B7 /* Build configuration list for PBXNativeTarget "Spolle" */;
 			buildPhases = (
 				ADE286C02E15266800DBC7B7 /* Sources */,
 				ADE286C12E15266800DBC7B7 /* Frameworks */,
@@ -110,16 +171,18 @@
 			fileSystemSynchronizedGroups = (
 				ADE286C62E15266800DBC7B7 /* songle */,
 			);
-			name = songle;
+			name = Spolle;
 			packageProductDependencies = (
+				112F66052E1EFCB40025BCBB /* FirebaseFirestore */,
+				1113119A2E36147B006A87B9 /* GoogleMobileAds */,
 			);
-			productName = songle;
-			productReference = ADE286C42E15266800DBC7B7 /* songle.app */;
+			productName = Spolle;
+			productReference = ADE286C42E15266800DBC7B7 /* Spolle.app */;
 			productType = "com.apple.product-type.application";
 		};
-		ADE286D32E15266B00DBC7B7 /* songleTests */ = {
+		ADE286D32E15266B00DBC7B7 /* SpolleTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = ADE286EB2E15266B00DBC7B7 /* Build configuration list for PBXNativeTarget "songleTests" */;
+			buildConfigurationList = ADE286EB2E15266B00DBC7B7 /* Build configuration list for PBXNativeTarget "SpolleTests" */;
 			buildPhases = (
 				ADE286D02E15266B00DBC7B7 /* Sources */,
 				ADE286D12E15266B00DBC7B7 /* Frameworks */,
@@ -133,16 +196,16 @@
 			fileSystemSynchronizedGroups = (
 				ADE286D72E15266B00DBC7B7 /* songleTests */,
 			);
-			name = songleTests;
+			name = SpolleTests;
 			packageProductDependencies = (
 			);
-			productName = songleTests;
-			productReference = ADE286D42E15266B00DBC7B7 /* songleTests.xctest */;
+			productName = SpolleTests;
+			productReference = ADE286D42E15266B00DBC7B7 /* SpolleTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		ADE286DD2E15266B00DBC7B7 /* songleUITests */ = {
+		ADE286DD2E15266B00DBC7B7 /* SpolleUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = ADE286EE2E15266B00DBC7B7 /* Build configuration list for PBXNativeTarget "songleUITests" */;
+			buildConfigurationList = ADE286EE2E15266B00DBC7B7 /* Build configuration list for PBXNativeTarget "SpolleUITests" */;
 			buildPhases = (
 				ADE286DA2E15266B00DBC7B7 /* Sources */,
 				ADE286DB2E15266B00DBC7B7 /* Frameworks */,
@@ -156,11 +219,11 @@
 			fileSystemSynchronizedGroups = (
 				ADE286E12E15266B00DBC7B7 /* songleUITests */,
 			);
-			name = songleUITests;
+			name = SpolleUITests;
 			packageProductDependencies = (
 			);
-			productName = songleUITests;
-			productReference = ADE286DE2E15266B00DBC7B7 /* songleUITests.xctest */;
+			productName = SpolleUITests;
+			productReference = ADE286DE2E15266B00DBC7B7 /* SpolleUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -195,14 +258,18 @@
 			);
 			mainGroup = ADE286BB2E15266800DBC7B7;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				112F66042E1EFCB30025BCBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				111311B32E36147B006A87B9 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = ADE286C52E15266800DBC7B7 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				ADE286C32E15266800DBC7B7 /* songle */,
-				ADE286D32E15266B00DBC7B7 /* songleTests */,
-				ADE286DD2E15266B00DBC7B7 /* songleUITests */,
+				ADE286C32E15266800DBC7B7 /* Spolle */,
+				ADE286D32E15266B00DBC7B7 /* SpolleTests */,
+				ADE286DD2E15266B00DBC7B7 /* SpolleUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -212,6 +279,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ADE287102E15266B00DBC7B7 /* GoogleService-Info.plist in Resources */,
+				ADE287122E15266B00DBC7B7 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -236,6 +305,20 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ADE287012E15266B00DBC7B7 /* SpolleApp.swift in Sources */,
+				ADE287022E15266B00DBC7B7 /* ContentView.swift in Sources */,
+				ADE287032E15266B00DBC7B7 /* AdMobManager.swift in Sources */,
+				ADE287042E15266B00DBC7B7 /* LanguageManager.swift in Sources */,
+				ADE287052E15266B00DBC7B7 /* LanguageSelectionView.swift in Sources */,
+				ADE287062E15266B00DBC7B7 /* MultiplayerViews.swift in Sources */,
+				ADE287072E15266B00DBC7B7 /* MultiplayerGameManager.swift in Sources */,
+				ADE287082E15266B00DBC7B7 /* GameManager.swift in Sources */,
+				ADE287092E15266B00DBC7B7 /* AppRatingManager.swift in Sources */,
+				ADE2870A2E15266B00DBC7B7 /* RatingPromptView.swift in Sources */,
+				ADE2870B2E15266B00DBC7B7 /* FirestoreService.swift in Sources */,
+				ADE2870C2E15266B00DBC7B7 /* SpotifyService.swift in Sources */,
+				ADE2870D2E15266B00DBC7B7 /* Item.swift in Sources */,
+				ADE2870E2E15266B00DBC7B7 /* SpotifySetupView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -258,12 +341,12 @@
 /* Begin PBXTargetDependency section */
 		ADE286D62E15266B00DBC7B7 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = ADE286C32E15266800DBC7B7 /* songle */;
+			target = ADE286C32E15266800DBC7B7 /* Spolle */;
 			targetProxy = ADE286D52E15266B00DBC7B7 /* PBXContainerItemProxy */;
 		};
 		ADE286E02E15266B00DBC7B7 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = ADE286C32E15266800DBC7B7 /* songle */;
+			target = ADE286C32E15266800DBC7B7 /* Spolle */;
 			targetProxy = ADE286DF2E15266B00DBC7B7 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -390,37 +473,25 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = songle/songle.entitlements;
+				CODE_SIGN_ENTITLEMENTS = songle/Spolle.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = HJ27L89K9L;
+				DEVELOPMENT_TEAM = ALA3476WTK;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = songle/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ubag.songle;
+				PRODUCT_BUNDLE_IDENTIFIER = ubag.Spolle;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 2.5;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -429,37 +500,25 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = songle/songle.entitlements;
+				CODE_SIGN_ENTITLEMENTS = songle/Spolle.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = HJ27L89K9L;
+				DEVELOPMENT_TEAM = ALA3476WTK;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = songle/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ubag.songle;
+				PRODUCT_BUNDLE_IDENTIFIER = ubag.Spolle;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 2.5;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -470,19 +529,18 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = HJ27L89K9L;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ubag.songleTests;
+				PRODUCT_BUNDLE_IDENTIFIER = ubag.SpolleTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/songle.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/songle";
-				XROS_DEPLOYMENT_TARGET = 2.5;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Spolle.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Spolle";
 			};
 			name = Debug;
 		};
@@ -493,19 +551,18 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = HJ27L89K9L;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ubag.songleTests;
+				PRODUCT_BUNDLE_IDENTIFIER = ubag.SpolleTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/songle.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/songle";
-				XROS_DEPLOYMENT_TARGET = 2.5;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Spolle.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Spolle";
 			};
 			name = Release;
 		};
@@ -515,19 +572,18 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = HJ27L89K9L;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ubag.songleUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = ubag.SpolleUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_TARGET_NAME = songle;
-				XROS_DEPLOYMENT_TARGET = 2.5;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Spolle;
 			};
 			name = Debug;
 		};
@@ -537,19 +593,18 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = HJ27L89K9L;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ubag.songleUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = ubag.SpolleUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_TARGET_NAME = songle;
-				XROS_DEPLOYMENT_TARGET = 2.5;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Spolle;
 			};
 			name = Release;
 		};
@@ -565,7 +620,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		ADE286E82E15266B00DBC7B7 /* Build configuration list for PBXNativeTarget "songle" */ = {
+		ADE286E82E15266B00DBC7B7 /* Build configuration list for PBXNativeTarget "Spolle" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				ADE286E92E15266B00DBC7B7 /* Debug */,
@@ -574,7 +629,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		ADE286EB2E15266B00DBC7B7 /* Build configuration list for PBXNativeTarget "songleTests" */ = {
+		ADE286EB2E15266B00DBC7B7 /* Build configuration list for PBXNativeTarget "SpolleTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				ADE286EC2E15266B00DBC7B7 /* Debug */,
@@ -583,7 +638,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		ADE286EE2E15266B00DBC7B7 /* Build configuration list for PBXNativeTarget "songleUITests" */ = {
+		ADE286EE2E15266B00DBC7B7 /* Build configuration list for PBXNativeTarget "SpolleUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				ADE286EF2E15266B00DBC7B7 /* Debug */,
@@ -593,6 +648,39 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		111311B32E36147B006A87B9 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googleads/swift-package-manager-google-mobile-ads.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.7.0;
+			};
+		};
+		112F66042E1EFCB30025BCBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.15.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1113119A2E36147B006A87B9 /* GoogleMobileAds */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 111311B32E36147B006A87B9 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */;
+			productName = GoogleMobileAds;
+		};
+		112F66052E1EFCB40025BCBB /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 112F66042E1EFCB30025BCBB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = ADE286BC2E15266800DBC7B7 /* Project object */;
 }
+

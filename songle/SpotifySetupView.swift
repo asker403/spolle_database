@@ -115,13 +115,23 @@ struct SpotifySetupView: View {
                 }
             }
             .navigationTitle("Setup")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
+                #if os(iOS)
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Close") {
                         dismiss()
                     }
                 }
+                #else
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+                #endif
             }
         }
         .sheet(isPresented: $showingInstructions) {
@@ -235,13 +245,23 @@ struct SpotifyInstructionsView: View {
                 .padding(20)
             }
             .navigationTitle("Setup Instructions")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
+                #if os(iOS)
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
                         dismiss()
                     }
                 }
+                #else
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+                #endif
             }
         }
     }

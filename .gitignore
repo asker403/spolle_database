@@ -1,0 +1,46 @@
+# Dependency directories
+node_modules/
+**/node_modules/
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Xcode
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xcworkspace
+!default.xcworkspace
+*.xccheckout
+*.moved-aside
+DerivedData/
+*.hmap
+*.ipa
+*.playground.xml
+sharedConfigs/
+
+# Large archive files
+*.zip
+*.tar.gz
+
+# Claude/Agent states
+.claude/
+
+# Secrets and keys
+*serviceAccountKey*.json
+serviceAccountKey.json
+serviceAccountKey.json.json
+

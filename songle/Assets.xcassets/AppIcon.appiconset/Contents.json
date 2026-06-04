@@ -1,6 +1,7 @@
 {
   "images" : [
     {
+      "filename" : "WhatsApp Image 2025-07-09 at 22.11.09.jpeg",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -12,6 +13,7 @@
           "value" : "dark"
         }
       ],
+      "filename" : "WhatsApp Image 2025-07-09 at 22.11.09 1.jpeg",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -23,6 +25,7 @@
           "value" : "tinted"
         }
       ],
+      "filename" : "WhatsApp Image 2025-07-09 at 22.11.09 2.jpeg",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -73,6 +76,7 @@
       "size" : "512x512"
     },
     {
+      "filename" : "WhatsApp Image 2025-07-09 at 22.11.09 3.jpeg",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "512x512"

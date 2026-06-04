@@ -12,15 +12,21 @@ class GameManager: ObservableObject {
     @Published var currentGame: GameState?
     @Published var targetArtist: Artist?
     @Published var allArtists: [Artist] = []
-    @Published var spotifyArtists: [SpotifyArtist] = []
-    @Published var isLoadingFromSpotify = false
+    @Published var isLoadingFromFirestore = false
     
     var modelContext: ModelContext
-    private let spotifyService = SpotifyService.shared
+    private let firestoreService = FirestoreService.shared
+    private var gameType: GameType = .daily
     
-    init(modelContext: ModelContext) {
+    enum GameType {
+        case daily
+        case genre(String)
+    }
+    
+    init(modelContext: ModelContext, gameType: GameType = .daily) {
         self.modelContext = modelContext
-        print("🎮 Initializing GameManager...")
+        self.gameType = gameType
+        print("🎮 Initializing GameManager for game type: \(gameType)...")
         
         // Load fallback artists first for immediate game setup
         loadFallbackArtists()
@@ -29,19 +35,71 @@ class GameManager: ObservableObject {
         debugPrintExistingGames()
         
         // Setup game with fallback data
-        setupDailyGame()
+        switch gameType {
+        case .daily:
+            setupDailyGame()
+        case .genre(let genre):
+            createNewGenreGame(genre: genre)
+        }
         
-        // Then load enhanced data from Spotify in background
-        loadEnhancedArtistsFromSpotify()
+        // Then load from Firestore in background and potentially refresh
+        loadArtistsFromFirestore()
     }
     
     // MARK: - Model Context Management
     func setModelContext(_ context: ModelContext) {
+        print("🔄 Setting model context...")
         if modelContext !== context {
             self.modelContext = context
-            print("🔄 Updated model context")
-            // Re-setup the game with new context
+            print("✅ Updated model context")
+            
+            // Re-setup the game with new context to ensure proper state restoration
             setupDailyGame()
+        } else {
+            print("ℹ️ Model context unchanged, but ensuring game state is loaded")
+            
+            // Ensure we have artists loaded
+            if allArtists.isEmpty {
+                print("⚠️ No artists loaded, loading fallback data")
+                loadFallbackArtists()
+            }
+            
+            // Even if context is the same, ensure we have a valid current game
+            if currentGame == nil {
+                print("⚠️ No current game found, setting up daily game")
+                setupDailyGame()
+            } else {
+                print("✅ Current game exists: \(currentGame?.dateString ?? "unknown"), completed: \(currentGame?.isCompleted ?? false)")
+                
+                // Critical: Verify the target artist is loaded
+                if targetArtist == nil, let game = currentGame {
+                    print("🎯 Loading target artist for existing game")
+                    targetArtist = getArtist(by: game.targetArtistId)
+                    
+                    if targetArtist == nil {
+                        print("⚠️ Target artist still not found, attempting replacement")
+                        if let replacementArtist = findReplacementArtist(for: game.targetArtistId) {
+                            targetArtist = replacementArtist
+                            game.targetArtistId = replacementArtist.id
+                            do {
+                                try modelContext.save()
+                                print("✅ Updated game with replacement target: \(replacementArtist.name)")
+                            } catch {
+                                print("❌ Error saving replacement target: \(error)")
+                            }
+                        } else {
+                            print("❌ No replacement found, will setup new game")
+                            currentGame = nil
+                            setupDailyGame()
+                            return
+                        }
+                    }
+                    
+                    print("🎯 Target artist confirmed: \(targetArtist?.name ?? "still unknown")")
+                } else if let target = targetArtist {
+                    print("✅ Target artist already loaded: \(target.name)")
+                }
+            }
         }
     }
     
@@ -49,6 +107,12 @@ class GameManager: ObservableObject {
     func setupDailyGame() {
         let today = getTodayDateString()
         print("🗓️ Setting up daily game for: \(today)")
+        
+        // Ensure we have some artists available first
+        if allArtists.isEmpty {
+            print("⚠️ No artists loaded yet, loading fallback data first")
+            loadFallbackArtists()
+        }
         
         // Check if we already have a game for today
         let descriptor = FetchDescriptor<GameState>(
@@ -62,8 +126,31 @@ class GameManager: ObservableObject {
             if let existingGame = existingGames.first {
                 print("🎮 Using existing game: \(existingGame.dateString) - Completed: \(existingGame.isCompleted)")
                 currentGame = existingGame
+                
+                // Critical: Always ensure target artist is loaded
                 targetArtist = getArtist(by: existingGame.targetArtistId)
-                print("🎯 Target artist: \(targetArtist?.name ?? "Unknown")")
+                
+                if targetArtist == nil {
+                    print("⚠️ Target artist not found for ID: \(existingGame.targetArtistId)")
+                    print("🔄 Attempting to find or create replacement target artist")
+                    
+                    // Try to find any artist with similar ID or name
+                    if let replacementArtist = findReplacementArtist(for: existingGame.targetArtistId) {
+                        targetArtist = replacementArtist
+                        existingGame.targetArtistId = replacementArtist.id
+                        try modelContext.save()
+                        print("✅ Updated game with replacement target: \(replacementArtist.name)")
+                    } else {
+                        print("❌ No replacement found, creating new game")
+                        // Delete the problematic game and create a new one
+                        modelContext.delete(existingGame)
+                        try modelContext.save()
+                        createNewDailyGame(for: today)
+                        return
+                    }
+                }
+                
+                print("🎯 Target artist confirmed: \(targetArtist?.name ?? "Unknown")")
             } else {
                 print("🆕 No game found for today, creating new one")
                 createNewDailyGame(for: today)
@@ -77,23 +164,44 @@ class GameManager: ObservableObject {
         }
     }
     
-    private func createNewDailyGame(for dateString: String) {
-        guard !allArtists.isEmpty else { 
+    private func createNewDailyGame(for dateString: String? = nil) {
+        guard !allArtists.isEmpty else {
             print("⚠️ No artists available to create game")
-            return 
+            return
         }
-        
+
+        // Fetch all previously used artist IDs
+        let descriptor = FetchDescriptor<GameState>()
+        var usedArtistIds: Set<String> = []
+        do {
+            let allGames = try modelContext.fetch(descriptor)
+            usedArtistIds = Set(allGames.map { $0.targetArtistId })
+            print("[DEBUG] Used artist IDs (", usedArtistIds.count, "): ", usedArtistIds)
+        } catch {
+            print("❌ Error fetching all games for exclusion: \(error)")
+        }
+
+        // Exclude all previously used artists
+        let availableArtists = allArtists.filter { !usedArtistIds.contains($0.id) }
+        print("[DEBUG] Available artists for selection (", availableArtists.count, "): ", availableArtists.map { $0.name })
+        let artistPool = availableArtists.isEmpty ? allArtists : availableArtists
+
         // Select a random artist for today's challenge
-        let randomArtist = allArtists.randomElement()!
+        let randomArtist = artistPool.randomElement()!
         print("🎯 Creating new game with target: \(randomArtist.name)")
-        let newGame = GameState(dateString: dateString, targetArtistId: randomArtist.id)
-        
+
+        // Always use a unique date string for each new game
+        let uniqueDateString = (dateString ?? getTodayDateString()) + "-" + UUID().uuidString.prefix(8)
+        let newGame = GameState(dateString: String(uniqueDateString), targetArtistId: randomArtist.id)
+        newGame.currentGuesses = [] // Extra safeguard: ensure guesses are empty
+
         modelContext.insert(newGame)
-        
+
         do {
             try modelContext.save()
             currentGame = newGame
             targetArtist = randomArtist
+            self.objectWillChange.send() // Notify UI of new game
             print("✅ Successfully created new daily game")
         } catch {
             print("❌ Error saving new game: \(error)")
@@ -143,15 +251,41 @@ class GameManager: ObservableObject {
     
     // MARK: - Game Logic
     func submitGuess(_ artistName: String) async -> Guess? {
-        guard let game = currentGame,
-              let target = targetArtist,
-              !game.isCompleted,
-              game.attemptsRemaining > 0 else {
+        print("🎯 Attempting to submit guess: '\(artistName)'")
+        
+        // Safety check to ensure game state is complete
+        if !ensureGameStateIsComplete() {
+            print("❌ Game state is incomplete, cannot submit guess")
             return nil
         }
         
+        guard let game = currentGame else {
+            print("❌ No current game found")
+            return nil
+        }
+        
+        guard let target = targetArtist else {
+            print("❌ No target artist found")
+            return nil
+        }
+        
+        guard !game.isCompleted else {
+            print("❌ Game is already completed")
+            return nil
+        }
+        
+        guard game.attemptsRemaining > 0 else {
+            print("❌ No attempts remaining")
+            return nil
+        }
+        
+        print("✅ All conditions met, processing guess...")
+        print("📊 Game state: completed=\(game.isCompleted), attempts=\(game.attemptsRemaining), guesses=\(game.currentGuesses.count)")
+        
         let trimmedName = artistName.trimmingCharacters(in: .whitespacesAndNewlines)
         let isCorrect = trimmedName.lowercased() == target.name.lowercased()
+        
+        print("🎯 Target: \(target.name), Guess: \(trimmedName), Correct: \(isCorrect)")
         
         // Generate hints by comparing with a random artist or getting proximity hints
         let hints = generateHints(guessedName: trimmedName, target: target, isCorrect: isCorrect)
@@ -163,8 +297,14 @@ class GameManager: ObservableObject {
         
         // Update game state
         await MainActor.run {
+            print("🔄 Adding guess to array: \(guess.artistName) with ID: \(guess.id)")
+            print("📊 Before adding: \(game.currentGuesses.count) guesses")
+            
             game.currentGuesses.append(guess)
             game.attemptsRemaining -= 1
+            
+            print("📊 After adding: \(game.currentGuesses.count) guesses")
+            print("📋 Current guess order: \(game.currentGuesses.enumerated().map { "\($0.offset + 1): \($0.element.artistName)" }.joined(separator: ", "))")
             
             if isCorrect {
                 game.isCompleted = true
@@ -174,17 +314,85 @@ class GameManager: ObservableObject {
                 game.isWon = false
             }
             
+            // If game is completed, ensure target artist has audio preview data
+            if game.isCompleted {
+                Task {
+                    await ensureTargetArtistHasAudioPreview()
+                }
+            }
+            
+            // Force UI update - notify SwiftUI that the game state has changed
+            self.objectWillChange.send()
+            
+            print("💾 Saving guess to database...")
             do {
                 try modelContext.save()
+                print("✅ Guess saved successfully")
+                
+                // Additional UI update after save to ensure consistency
+                self.objectWillChange.send()
+                
             } catch {
-                print("Error saving guess: \(error)")
+                print("❌ Error saving guess: \(error)")
             }
         }
         
+        print("🎮 Guess processed successfully")
         return guess
     }
     
-    // MARK: - Enhanced Artist Data Fetching
+    // MARK: - Game State Validation
+    private func ensureGameStateIsComplete() -> Bool {
+        print("🔍 Validating game state completeness...")
+        
+        // Check if we have artists loaded
+        if allArtists.isEmpty {
+            print("⚠️ No artists loaded, loading fallback data")
+            loadFallbackArtists()
+        }
+        
+        // Check if we have a current game
+        guard let game = currentGame else {
+            print("⚠️ No current game, setting up daily game")
+            setupDailyGame()
+            return currentGame != nil && targetArtist != nil
+        }
+        
+        // Check if we have a target artist
+        if targetArtist == nil {
+            print("⚠️ No target artist, attempting to load")
+            targetArtist = getArtist(by: game.targetArtistId)
+            
+            if targetArtist == nil {
+                print("⚠️ Target artist not found, looking for replacement")
+                if let replacement = findReplacementArtist(for: game.targetArtistId) {
+                    targetArtist = replacement
+                    game.targetArtistId = replacement.id
+                    do {
+                        try modelContext.save()
+                        print("✅ Updated game with replacement target: \(replacement.name)")
+                    } catch {
+                        print("❌ Error saving replacement: \(error)")
+                        return false
+                    }
+                } else {
+                    print("❌ No replacement found")
+                    return false
+                }
+            }
+        }
+        
+        let isComplete = currentGame != nil && targetArtist != nil && !allArtists.isEmpty
+        print("🎯 Game state validation result: \(isComplete ? "✅ Complete" : "❌ Incomplete")")
+        
+        if let target = targetArtist {
+            print("🎯 Target confirmed: \(target.name)")
+        }
+        
+        return isComplete
+    }
+    
+    // MARK: - Artist Image Fetching
     private func fetchArtistImage(artistName: String) async -> String? {
         // First check if we have the artist in our local cache with image
         if let localArtist = allArtists.first(where: { $0.name.lowercased() == artistName.lowercased() }),
@@ -193,59 +401,14 @@ class GameManager: ObservableObject {
             return imageURL
         }
         
-        // If Spotify is authenticated, try to get enhanced data
-        guard spotifyService.isAuthenticated else {
-            print("⚠️ Spotify not authenticated, cannot fetch enhanced data for \(artistName)")
-            return nil
-        }
-        
-        print("🔍 Fetching enhanced artist data for: \(artistName)")
-        
-        // Use the enhanced data fetching method
-        if let enhancedArtist = await spotifyService.getEnhancedArtistData(name: artistName) {
-            print("✅ Got enhanced data for \(artistName): Country=\(enhancedArtist.country), Debut=\(enhancedArtist.debutYear)")
-            
-            // Update local cache with enhanced data
-            await MainActor.run {
-                if let localArtist = self.allArtists.first(where: { $0.name.lowercased() == artistName.lowercased() }) {
-                    // Update with enhanced information
-                    localArtist.imageURL = enhancedArtist.imageURL
-                    localArtist.country = enhancedArtist.country
-                    localArtist.debutYear = enhancedArtist.debutYear
-                    localArtist.gender = enhancedArtist.gender
-                    localArtist.previewURL = enhancedArtist.previewURL
-                    localArtist.spotifyId = enhancedArtist.spotifyId
-                    print("🔄 Updated local artist \(artistName) with enhanced data")
-                } else {
-                    // Add new artist to our collection
-                    self.allArtists.append(enhancedArtist)
-                    print("➕ Added new artist \(artistName) with enhanced data")
-                }
-            }
-            
-            return enhancedArtist.imageURL
-        }
-        
-        // Fallback to basic search if enhanced fails
-        print("⚠️ Enhanced data fetch failed, falling back to basic search for \(artistName)")
-        let spotifyArtists = await spotifyService.searchArtists(query: artistName, limit: 1)
-        
-        if let spotifyArtist = spotifyArtists.first,
-           let imageURL = spotifyArtist.images.first?.url {
-            print("✅ Found basic image for \(artistName): \(imageURL)")
-            
-            // Update local cache with basic data
-            await MainActor.run {
-                if let localArtist = self.allArtists.first(where: { $0.name.lowercased() == artistName.lowercased() }) {
-                    localArtist.imageURL = imageURL
-                    localArtist.spotifyId = spotifyArtist.id
-                }
-            }
-            
+        // Use image from Firestore data if available
+        if let localArtist = allArtists.first(where: { $0.name.lowercased() == artistName.lowercased() }),
+           let imageURL = localArtist.imageURL {
+            print("✅ Found cached image for \(artistName): \(imageURL)")
             return imageURL
         }
         
-        print("❌ No image found for \(artistName)")
+        print("⚠️ No image available for \(artistName)")
         return nil
     }
     
@@ -264,6 +427,17 @@ class GameManager: ObservableObject {
         }
         
         var hints: [String: String] = [:]
+        
+        // If the guess is correct, all hints should be correct
+        if isCorrect {
+            hints["Genre"] = "\(guessedArtist.genre)|correct"
+            hints["Country"] = "\(guessedArtist.country)|correct"
+            hints["Debut Year"] = "\(guessedArtist.debutYear)|correct"
+            hints["Gender"] = "\(guessedArtist.gender)|correct"
+            hints["Type"] = "\(guessedArtist.isSolo ? "Solo" : "Group")|correct"
+            hints["Popularity"] = "#\(guessedArtist.spotifyPopularity)|correct"
+            return hints
+        }
         
         // Genre comparison
         if guessedArtist.genre == target.genre {
@@ -287,9 +461,11 @@ class GameManager: ObservableObject {
         if guessedArtist.debutYear == target.debutYear {
             hints["Debut Year"] = "\(guessedArtist.debutYear)|correct"
         } else if abs(guessedArtist.debutYear - target.debutYear) <= 5 {
-            hints["Debut Year"] = "\(guessedArtist.debutYear)|close"
+            let direction = guessedArtist.debutYear > target.debutYear ? "lower" : "higher"
+            hints["Debut Year"] = "\(guessedArtist.debutYear)|close|\(direction)"
         } else {
-            hints["Debut Year"] = "\(guessedArtist.debutYear)|incorrect"
+            let direction = guessedArtist.debutYear > target.debutYear ? "lower" : "higher"
+            hints["Debut Year"] = "\(guessedArtist.debutYear)|incorrect|\(direction)"
         }
         
         // Gender comparison
@@ -308,16 +484,18 @@ class GameManager: ObservableObject {
             hints["Type"] = "\(guessedType)|incorrect"
         }
         
-        // Popularity comparison (using global ranking by monthly listeners)
-        let guessedRanking = getGlobalRanking(for: guessedArtist.name)
-        let targetRanking = getGlobalRanking(for: target.name)
+        // Popularity comparison (using database ranking)
+        let guessedRanking = guessedArtist.spotifyPopularity
+        let targetRanking = target.spotifyPopularity
         
         if guessedRanking == targetRanking {
             hints["Popularity"] = "#\(guessedRanking)|correct"
-        } else if abs(guessedRanking - targetRanking) <= 10 {
-            hints["Popularity"] = "#\(guessedRanking)|close"
+        } else if abs(guessedRanking - targetRanking) <= 5 {
+            let direction = guessedRanking > targetRanking ? "higher" : "lower" // Lower number = higher popularity
+            hints["Popularity"] = "#\(guessedRanking)|close|\(direction)"
         } else {
-            hints["Popularity"] = "#\(guessedRanking)|incorrect"
+            let direction = guessedRanking > targetRanking ? "higher" : "lower" // Lower number = higher popularity
+            hints["Popularity"] = "#\(guessedRanking)|incorrect|\(direction)"
         }
         
         return hints
@@ -359,7 +537,27 @@ class GameManager: ObservableObject {
     }
     
     private func getArtist(by id: String) -> Artist? {
-        return allArtists.first { $0.id == id }
+        // 1. Try to find by ID (case-insensitive)
+        if let localArtist = allArtists.first(where: { $0.id.lowercased() == id.lowercased() }) {
+            return localArtist
+        }
+        // 2. Try to find by name (case-insensitive, ignoring 'firestore-' prefix and dashes/underscores)
+        let normalizedId = id
+            .replacingOccurrences(of: "firestore-", with: "")
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if let byName = allArtists.first(where: { $0.name.lowercased().replacingOccurrences(of: "-", with: " ").trimmingCharacters(in: .whitespacesAndNewlines) == normalizedId }) {
+            return byName
+        }
+        // 3. Try to find by name contains (for partial matches)
+        if let byPartial = allArtists.first(where: { $0.name.lowercased().contains(normalizedId) }) {
+            return byPartial
+        }
+        // 4. Not found
+        print("⚠️ getArtist(by:) could not find artist for id: \(id)")
+        return nil
     }
     
     // MARK: - Global Ranking System
@@ -596,159 +794,125 @@ class GameManager: ObservableObject {
         return 999 // Default for unknown artists
     }
     
-    // MARK: - Refresh Unknown Data
-    func refreshUnknownArtistData() async {
-        print("🔄 Refreshing artists with unknown data...")
-        
-        guard spotifyService.isAuthenticated else {
-            print("⚠️ Cannot refresh unknown data - Spotify not authenticated")
-            return
-        }
-        
-        let artistsWithUnknownData = allArtists.filter { artist in
-            artist.country == "Unknown" || artist.gender == "Unknown" || artist.debutYear == 0
-        }
-        
-        print("🔍 Found \(artistsWithUnknownData.count) artists with unknown data")
-        
-        for artist in artistsWithUnknownData.prefix(20) { // Limit to avoid rate limits
-            await refreshArtistData(for: artist.name)
-            
-            // Small delay to avoid rate limits
-            try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
-        }
-        
-        await MainActor.run {
-            print("✅ Finished refreshing unknown artist data")
-        }
-    }
-    
-    // MARK: - Spotify Data Loading (Updated to use enhanced data when possible)
-    func loadArtistsFromSpotify() {
+    // MARK: - Spotify Data Loading
+    func loadArtistsFromFirestore() {
         Task {
             await MainActor.run {
-                isLoadingFromSpotify = true
+                isLoadingFromFirestore = true
             }
             
-            // Authenticate with Spotify
-            await spotifyService.authenticate()
+            print("🔥 Loading artists from Firestore...")
+            let firestoreArtists = await firestoreService.fetchAllArtists()
             
-            if spotifyService.isAuthenticated {
-                print("🎵 Loading artists from Spotify with enhanced data where possible...")
-                
-                // Load popular artists from various genres with higher limits for better selection
-                let genres = ["pop", "rock", "hip-hop", "electronic", "alternative", "r&b", "country", "indie", "latin", "metal"]
-                var allSpotifyArtists: [SpotifyArtist] = []
-                
-                for genre in genres {
-                    let artists = await spotifyService.getArtistsByGenre(genre, limit: 50)
-                    allSpotifyArtists.append(contentsOf: artists)
-                    print("📥 Loaded \(artists.count) \(genre) artists")
-                }
-                
-                // Remove duplicates and filter by popularity (keep only top artists)
-                let uniqueArtists = Array(Set(allSpotifyArtists.map { $0.id })).compactMap { id in
-                    allSpotifyArtists.first { $0.id == id }
-                }
-                
-                // Filter to keep only popular artists (popularity score 40+) and sort by popularity
-                let popularArtists = uniqueArtists
-                    .filter { $0.popularity >= 40 } // Only keep reasonably popular artists
-                    .sorted { $0.popularity > $1.popularity } // Sort by popularity (highest first)
-                    .prefix(150) // Take top 150 most popular artists
-                
-                // Convert to Artist objects, trying enhanced data for top artists
-                var convertedArtists: [Artist] = []
-                
-                for (index, spotifyArtist) in popularArtists.enumerated() {
-                    if index < 30 { // Get enhanced data for top 30 artists
-                        if let enhancedArtist = await spotifyService.getEnhancedArtistData(name: spotifyArtist.name) {
-                            convertedArtists.append(enhancedArtist)
-                            print("✅ Enhanced: \(enhancedArtist.name) - \(enhancedArtist.country)")
-                        } else {
-                            convertedArtists.append(spotifyArtist.toArtist())
-                        }
-                        
-                        // Small delay to avoid rate limits
-                        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
-                    } else {
-                        // Use basic conversion for remaining artists
-                        convertedArtists.append(spotifyArtist.toArtist())
-                    }
-                }
-
-                await MainActor.run {
-                    self.spotifyArtists = Array(popularArtists)
-                    self.allArtists = convertedArtists
-                    self.isLoadingFromSpotify = false
-                    print("✅ Loaded \(convertedArtists.count) artists from Spotify (top 30 with enhanced data)")
+            await MainActor.run {
+                if !firestoreArtists.isEmpty {
+                    self.allArtists = firestoreArtists.sorted { $0.spotifyPopularity < $1.spotifyPopularity } // Sort by popularity ranking
+                    self.isLoadingFromFirestore = false
+                    print("✅ Loaded \(firestoreArtists.count) artists from Firestore")
                     
-                    // If we have a fresh game (no guesses yet), update it with a Spotify artist
+                    // IMPORTANT: Only update target for completely new games, not restored ones
+                    // Check if we have a restored game that already has a valid target
                     if let currentGame = self.currentGame, 
                        currentGame.currentGuesses.isEmpty,
                        !self.allArtists.isEmpty {
-                        print("🔄 Updating game with Spotify artist...")
-                        let randomSpotifyArtist = self.allArtists.randomElement()!
-                        currentGame.targetArtistId = randomSpotifyArtist.id
-                        self.targetArtist = randomSpotifyArtist
                         
-                        do {
-                            try self.modelContext.save()
-                            print("✅ Updated game target to: \(randomSpotifyArtist.name) from \(randomSpotifyArtist.country)")
-                        } catch {
-                            print("❌ Error updating game: \(error)")
+                        // Check if the current target artist exists in our new artist list
+                        if let existingTarget = self.targetArtist,
+                           self.allArtists.contains(where: { $0.name.lowercased() == existingTarget.name.lowercased() }) {
+                            print("✅ Existing target artist '\(existingTarget.name)' found in Firestore data, updating with audio preview")
+                            // Update the target with the Firestore version for better data (including audio preview)
+                            if let firestoreVersion = self.allArtists.first(where: { $0.name.lowercased() == existingTarget.name.lowercased() }) {
+                                print("🎵 Firestore version has previewURL: \(firestoreVersion.previewURL ?? "nil")")
+                                self.targetArtist = firestoreVersion
+                                currentGame.targetArtistId = firestoreVersion.id
+                                do {
+                                    try self.modelContext.save()
+                                    print("🔄 Updated existing target with Firestore data: \(firestoreVersion.name)")
+                                } catch {
+                                    print("❌ Error updating target with Firestore data: \(error)")
+                                }
+                            }
+                        } else if self.targetArtist == nil {
+                            // Only set a new target if we don't have one (truly new game)
+                            print("🆕 No existing target found, setting new Firestore target for fresh game")
+                            let randomFirestoreArtist = self.allArtists.randomElement()!
+                            currentGame.targetArtistId = randomFirestoreArtist.id
+                            self.targetArtist = randomFirestoreArtist
+                            
+                            do {
+                                try self.modelContext.save()
+                                print("✅ Set new game target to: \(randomFirestoreArtist.name)")
+                            } catch {
+                                print("❌ Error setting new game target: \(error)")
+                            }
+                        } else {
+                            print("ℹ️ Existing target '\(self.targetArtist?.name ?? "unknown")' not found in Firestore data, but keeping it for consistency")
                         }
                     }
-                }
-            } else {
-                print("❌ Spotify authentication failed, using fallback data")
-                await MainActor.run {
+                } else {
+                    print("❌ No artists found in Firestore, using fallback data")
                     self.loadFallbackArtists()
-                    self.isLoadingFromSpotify = false
+                    self.isLoadingFromFirestore = false
                 }
             }
         }
     }
     
     private func loadFallbackArtists() {
-        // Enhanced fallback data with accurate information from the knowledge database
-        let fallbackArtists = [
-            Artist(id: "taylor-swift", name: "Taylor Swift", gender: "Female", country: "United States", debutYear: 2006, genre: "Pop", isSolo: true, spotifyPopularity: 95),
-            Artist(id: "drake", name: "Drake", gender: "Male", country: "Canada", debutYear: 2009, genre: "Hip-Hop", isSolo: true, spotifyPopularity: 92),
-            Artist(id: "billie-eilish", name: "Billie Eilish", gender: "Female", country: "United States", debutYear: 2016, genre: "Alternative", isSolo: true, spotifyPopularity: 88),
-            Artist(id: "the-beatles", name: "The Beatles", gender: "Group", country: "United Kingdom", debutYear: 1960, genre: "Rock", isSolo: false, spotifyPopularity: 85),
-            Artist(id: "bad-bunny", name: "Bad Bunny", gender: "Male", country: "Puerto Rico", debutYear: 2016, genre: "Hip-Hop", isSolo: true, spotifyPopularity: 94),
-            Artist(id: "the-weeknd", name: "The Weeknd", gender: "Male", country: "Canada", debutYear: 2011, genre: "R&B", isSolo: true, spotifyPopularity: 91),
-            Artist(id: "dua-lipa", name: "Dua Lipa", gender: "Female", country: "United Kingdom", debutYear: 2015, genre: "Pop", isSolo: true, spotifyPopularity: 89),
-            Artist(id: "ed-sheeran", name: "Ed Sheeran", gender: "Male", country: "United Kingdom", debutYear: 2011, genre: "Pop", isSolo: true, spotifyPopularity: 87),
-            Artist(id: "ariana-grande", name: "Ariana Grande", gender: "Female", country: "United States", debutYear: 2013, genre: "Pop", isSolo: true, spotifyPopularity: 86),
-            Artist(id: "post-malone", name: "Post Malone", gender: "Male", country: "United States", debutYear: 2015, genre: "Hip-Hop", isSolo: true, spotifyPopularity: 84),
-            Artist(id: "david-guetta", name: "David Guetta", gender: "Male", country: "France", debutYear: 2001, genre: "Electronic", isSolo: true, spotifyPopularity: 82),
-            Artist(id: "bruno-mars", name: "Bruno Mars", gender: "Male", country: "United States", debutYear: 2010, genre: "Pop", isSolo: true, spotifyPopularity: 90),
-            Artist(id: "adele", name: "Adele", gender: "Female", country: "United Kingdom", debutYear: 2008, genre: "Pop", isSolo: true, spotifyPopularity: 88),
-            Artist(id: "eminem", name: "Eminem", gender: "Male", country: "United States", debutYear: 1996, genre: "Hip-Hop", isSolo: true, spotifyPopularity: 85),
-            Artist(id: "rihanna", name: "Rihanna", gender: "Female", country: "Barbados", debutYear: 2005, genre: "Pop", isSolo: true, spotifyPopularity: 89),
-            Artist(id: "coldplay", name: "Coldplay", gender: "Group", country: "United Kingdom", debutYear: 1996, genre: "Rock", isSolo: false, spotifyPopularity: 86),
-            Artist(id: "lady-gaga", name: "Lady Gaga", gender: "Female", country: "United States", debutYear: 2008, genre: "Pop", isSolo: true, spotifyPopularity: 87),
-            Artist(id: "justin-bieber", name: "Justin Bieber", gender: "Male", country: "Canada", debutYear: 2009, genre: "Pop", isSolo: true, spotifyPopularity: 88),
-            Artist(id: "beyonce", name: "Beyoncé", gender: "Female", country: "United States", debutYear: 1997, genre: "R&B", isSolo: true, spotifyPopularity: 86),
-            Artist(id: "kanye-west", name: "Kanye West", gender: "Male", country: "United States", debutYear: 2004, genre: "Hip-Hop", isSolo: true, spotifyPopularity: 83),
-            Artist(id: "calvin-harris", name: "Calvin Harris", gender: "Male", country: "United Kingdom", debutYear: 2007, genre: "Electronic", isSolo: true, spotifyPopularity: 81),
-            Artist(id: "imagine-dragons", name: "Imagine Dragons", gender: "Group", country: "United States", debutYear: 2008, genre: "Rock", isSolo: false, spotifyPopularity: 84),
-            Artist(id: "maroon-5", name: "Maroon 5", gender: "Group", country: "United States", debutYear: 1994, genre: "Pop", isSolo: false, spotifyPopularity: 82),
-            Artist(id: "shawn-mendes", name: "Shawn Mendes", gender: "Male", country: "Canada", debutYear: 2014, genre: "Pop", isSolo: true, spotifyPopularity: 80),
-            Artist(id: "selena-gomez", name: "Selena Gomez", gender: "Female", country: "United States", debutYear: 2009, genre: "Pop", isSolo: true, spotifyPopularity: 81)
-        ]
-        
-        allArtists = fallbackArtists
-        print("📝 Using enhanced fallback artist data (\(fallbackArtists.count) artists with complete information)")
+        // Load from local JSON instead of hardcoded list
+        if let url = Bundle.main.url(forResource: "artists", withExtension: "json") ?? URL(string: "swiftdb/artists.json"),
+           let data = try? Data(contentsOf: url),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            // Map JSON to Artist objects (adjust keys as needed)
+            let loadedArtists: [Artist] = json.compactMap { dict in
+                guard let name = dict["isim"] as? String,
+                      let id = dict["isim"] as? String, // Use name as id if no id field
+                      let genre = dict["genre"] as? String,
+                      let country = dict["ulke"] as? String,
+                      let debutYear = dict["cikis_yili"] as? Int,
+                      let gender = dict["cinsiyet"] as? String,
+                      let isSolo = dict["tip"] as? String,
+                      let popularity = dict["populerlik"] as? Int else { return nil }
+                let audioPreview = dict["audio_preview_url"] as? String
+                return Artist(
+                    id: id,
+                    name: name,
+                    gender: gender,
+                    country: country,
+                    debutYear: debutYear,
+                    genre: genre,
+                    isSolo: isSolo.lowercased().contains("solo"),
+                    spotifyPopularity: popularity,
+                    previewURL: audioPreview
+                )
+            }
+            allArtists = loadedArtists
+            print("📝 Loaded \(loadedArtists.count) artists from local JSON")
+        } else {
+            // Fallback to hardcoded list if JSON fails
+            allArtists = [
+                Artist(id: "taylor-swift", name: "Taylor Swift", gender: "Female", country: "United States", debutYear: 2006, genre: "Pop", isSolo: true, spotifyPopularity: 1),
+                Artist(id: "drake", name: "Drake", gender: "Male", country: "Canada", debutYear: 2009, genre: "Hip Hop", isSolo: true, spotifyPopularity: 2),
+                Artist(id: "bts", name: "BTS", gender: "Group", country: "South Korea", debutYear: 2013, genre: "K-pop", isSolo: false, spotifyPopularity: 3),
+                Artist(id: "billie-eilish", name: "Billie Eilish", gender: "Female", country: "United States", debutYear: 2016, genre: "Alternative Pop", isSolo: true, spotifyPopularity: 4),
+                Artist(id: "ed-sheeran", name: "Ed Sheeran", gender: "Male", country: "United Kingdom", debutYear: 2011, genre: "Pop", isSolo: true, spotifyPopularity: 5),
+                Artist(id: "ariana-grande", name: "Ariana Grande", gender: "Female", country: "United States", debutYear: 2013, genre: "Pop", isSolo: true, spotifyPopularity: 6),
+                Artist(id: "imagine-dragons", name: "Imagine Dragons", gender: "Group", country: "United States", debutYear: 2012, genre: "Rock", isSolo: false, spotifyPopularity: 7),
+                Artist(id: "dua-lipa", name: "Dua Lipa", gender: "Female", country: "United Kingdom", debutYear: 2015, genre: "Pop", isSolo: true, spotifyPopularity: 8),
+                Artist(id: "bad-bunny", name: "Bad Bunny", gender: "Male", country: "Puerto Rico", debutYear: 2016, genre: "Latin Trap", isSolo: true, spotifyPopularity: 9),
+                Artist(id: "blackpink", name: "BLACKPINK", gender: "Group", country: "South Korea", debutYear: 2016, genre: "K-pop", isSolo: false, spotifyPopularity: 10)
+            ]
+            print("📝 Using fallback popular artist data (\(allArtists.count) artists)")
+        }
     }
+    
+
     
     // MARK: - Artist Search
     func searchArtists(query: String) -> [Artist] {
         guard !query.isEmpty else { return [] }
         
-        // First, search local cache
+        // Search local cache first
         let lowercasedQuery = query.lowercased()
         let localResults = allArtists.filter { artist in
             artist.name.lowercased().contains(lowercasedQuery)
@@ -757,13 +921,13 @@ class GameManager: ObservableObject {
         return Array(localResults)
     }
     
-    // MARK: - Live Spotify Search
+    // MARK: - Live Firestore Search
     func searchArtistsLive(query: String) async -> [Artist] {
         guard !query.isEmpty else { return [] }
         
-        if spotifyService.isAuthenticated {
-            let spotifyResults = await spotifyService.searchArtists(query: query, limit: 10)
-            return spotifyResults.map { $0.toArtist() }
+        // Use Firestore search if available, otherwise fall back to local search
+        if firestoreService.isConnected {
+            return await firestoreService.searchArtists(query: query, limit: 10)
         } else {
             return searchArtists(query: query)
         }
@@ -877,34 +1041,84 @@ class GameManager: ObservableObject {
     func createNewGenreGame(genre: String) {
         print("🎵 Creating new \(genre) game...")
         
-        // Clear current game immediately
+        // CRITICAL: Force clear ALL daily game state for complete isolation
         self.currentGame = nil
         self.targetArtist = nil
         
+        // Force UI update to clear any daily game UI state
+        DispatchQueue.main.async {
+            self.objectWillChange.send()
+        }
+        
         Task {
-            // Try to get fresh artists from Spotify for the genre
-            var genreArtists: [Artist] = []
-            
-            if spotifyService.isAuthenticated {
-                let spotifyArtists = await spotifyService.getArtistsByGenre(genre, limit: 50)
-                // Filter to only popular artists for better game experience
-                let popularGenreArtists = spotifyArtists.filter { $0.popularity >= 35 }
-                genreArtists = popularGenreArtists.map { $0.toArtist() }
-                print("🎵 Loaded \(genreArtists.count) popular \(genre) artists from Spotify")
+            // Ensure artists are loaded first with timeout fallback
+            var loadAttempts = 0
+            while self.allArtists.isEmpty && loadAttempts < 3 {
+                print("🔄 Attempt \(loadAttempts + 1): Artists not loaded yet, loading from Firestore...")
+                await self.loadArtistsFromFirestore()
+                
+                if self.allArtists.isEmpty {
+                    // Wait briefly and try fallback data
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                    await MainActor.run {
+                        if self.allArtists.isEmpty {
+                            print("⚠️ Firestore load failed, using fallback artists")
+                            self.loadFallbackArtists()
+                        }
+                    }
+                }
+                loadAttempts += 1
             }
             
-            // Fallback to local cache if Spotify fails or returns no results
-            if genreArtists.isEmpty {
+            // Double-check we have artists
+            if self.allArtists.isEmpty {
+                print("❌ Critical: No artists available even after fallback")
+                return
+            }
+            
+            print("✅ Artists available: \(self.allArtists.count)")
+            print("📊 Available genres: \(Set(self.allArtists.map { $0.genre }).sorted())")
+            
+            // Get artists from Firestore for the genre
+            let firestoreArtists = await FirestoreService.shared.getArtistsByGenre(genre, limit: 50)
+            var genreArtists: [Artist] = []
+            
+            if !firestoreArtists.isEmpty {
+                genreArtists = firestoreArtists
+                print("� Loaded \(genreArtists.count) \(genre) artists from Firestore")
+            } else {
                 genreArtists = getArtistsByGenre(genre)
                 print("📝 Using \(genreArtists.count) cached \(genre) artists")
             }
             
-            guard !genreArtists.isEmpty else {
-                print("❌ No artists found for genre: \(genre)")
-                return
+            // Enhanced fallback strategy
+            if genreArtists.isEmpty {
+                print("⚠️ No genre-specific artists found, using enhanced fallback strategy...")
+                
+                // Try partial genre matching
+                let partialMatches = self.allArtists.filter { artist in
+                    artist.genre.lowercased().contains(genre.lowercased()) ||
+                    genre.lowercased().contains(artist.genre.lowercased())
+                }
+                
+                if !partialMatches.isEmpty {
+                    genreArtists = partialMatches
+                    print("🔍 Found \(genreArtists.count) artists with partial genre matching")
+                } else {
+                    // Use any available artist as absolute fallback
+                    if let fallbackArtist = self.allArtists.randomElement() {
+                        genreArtists = [fallbackArtist]
+                        print("🔄 Using random fallback artist: \(fallbackArtist.name)")
+                    }
+                }
             }
             
             await MainActor.run {
+                guard !genreArtists.isEmpty else {
+                    print("❌ No artists available at all, cannot create genre game")
+                    return
+                }
+                
                 // Create a unique game ID for genre games
                 let uniqueGameId = "genre-\(genre.lowercased())-\(UUID().uuidString.prefix(8))"
                 
@@ -919,7 +1133,12 @@ class GameManager: ObservableObject {
                     try self.modelContext.save()
                     self.currentGame = newGame
                     self.targetArtist = randomArtist
-                    print("✅ Created \(genre) game with target: \(randomArtist.name)")
+                    
+                    // Force UI refresh to show the new game state
+                    self.objectWillChange.send()
+                    
+                    print("✅ Created \(genre) game with target: \(randomArtist.name) (genre: \(randomArtist.genre))")
+                    print("✅ Game state: isolated from daily game, fresh start")
                 } catch {
                     print("❌ Error creating genre game: \(error)")
                 }
@@ -929,19 +1148,24 @@ class GameManager: ObservableObject {
     
     private func getArtistsByGenre(_ genre: String) -> [Artist] {
         return allArtists.filter { artist in
-            // Direct match
-            if artist.genre.lowercased() == genre.lowercased() {
-                return true
+            // Use the same mapping as FirestoreService
+            let mappedGenres = mapGenreToDatabase(genre)
+            
+            // Check if artist's genre matches any of the mapped genres
+            for mappedGenre in mappedGenres {
+                if artist.genre.lowercased() == mappedGenre.lowercased() {
+                    return true
+                }
             }
             
-            // Related genres
+            // Also check broader related genres for fallback
             let relatedGenres: [String: [String]] = [
-                "Pop": ["Pop", "Alternative", "Indie Pop"],
-                "Rock": ["Rock", "Alternative Rock", "Indie Rock"],
-                "Hip Hop": ["Hip-Hop", "R&B", "Rap"],
-                "Electronic": ["Electronic", "Dance", "EDM"],
-                "Classical": ["Classical", "Jazz", "Blues"],
-                "Country": ["Country", "Folk", "Americana"]
+                "Alternative": ["Alternative", "Alternative Rock", "Indie Rock", "Indie", "Grunge"],
+                "Electronic": ["Electronic", "Dance", "EDM", "Edm", "House", "Techno", "Dubstep", "Tropical House", "Afro House"],
+                "Hip Hop": ["Hip-Hop", "Hip Hop", "Rap", "Melodic Rap", "Trap", "Urban", "Argentine Trap"],
+                "Pop": ["Pop", "Soft Pop", "Indie Pop", "Electropop", "Teen Pop", "Dance Pop", "Bedroom Pop", "Latin Pop"],
+                "R&B": ["R&B", "RnB", "Soul", "Neo-Soul", "Contemporary R&B"],
+                "Rock": ["Rock", "Classic Rock", "Hard Rock", "Punk Rock", "Metal"]
             ]
             
             if let related = relatedGenres[genre] {
@@ -949,6 +1173,60 @@ class GameManager: ObservableObject {
             }
             
             return false
+        }
+    }
+    
+    private func getArtistsByGenreBroader(_ genre: String) -> [Artist] {
+        return allArtists.filter { artist in
+            // Very broad genre matching for fallback
+            let artistGenre = artist.genre.lowercased()
+            let targetGenre = genre.lowercased()
+            
+            // Direct match
+            if artistGenre == targetGenre {
+                return true
+            }
+            
+            // Contains match
+            if artistGenre.contains(targetGenre) || targetGenre.contains(artistGenre) {
+                return true
+            }
+            
+            // Very broad related genres
+            let broadRelatedGenres: [String: [String]] = [
+                "pop": ["pop", "dance", "electronic", "indie pop", "electropop", "teen pop", "dance pop", "bedroom pop", "latin pop", "soft pop"],
+                "rock": ["rock", "metal", "punk", "hard rock", "classic rock", "punk rock", "indie rock", "alternative rock"],
+                "hip hop": ["hip hop", "rap", "trap", "urban", "melodic rap", "argentine trap", "hip-hop"],
+                "electronic": ["electronic", "dance", "edm", "house", "techno", "dubstep", "tropical house", "afro house"],
+                "alternative": ["alternative", "indie", "grunge", "indie rock", "alternative rock"],
+                "r&b": ["r&b", "rnb", "soul", "neo-soul", "contemporary r&b"]
+            ]
+            
+            if let related = broadRelatedGenres[targetGenre] {
+                return related.contains(artistGenre)
+            }
+            
+            return false
+        }
+    }
+    
+    // Map UI genre names to actual database genre names (same as FirestoreService)
+    private func mapGenreToDatabase(_ uiGenre: String) -> [String] {
+        switch uiGenre.lowercased() {
+        case "pop":
+            return ["Pop", "Soft Pop", "Bedroom Pop", "Latin Pop"]
+        case "hip hop":
+            return ["Rap", "Melodic Rap", "Argentine Trap"]
+        case "r&b":
+            return ["R&B"]
+        case "rock":
+            return ["Rock", "Classic Rock"]
+        case "electronic":
+            return ["Edm", "Tropical House", "Afro House"]
+        case "alternative":
+            return ["Indie", "Alternative", "Alternative Rock"] // These might not exist much in DB
+        default:
+            return [uiGenre] // Fallback to exact match
         }
     }
     
@@ -972,107 +1250,85 @@ class GameManager: ObservableObject {
         }
     }
     
-    // MARK: - Enhanced Artist Loading
-    func loadEnhancedArtistsFromSpotify() {
-        Task {
-            await MainActor.run {
-                isLoadingFromSpotify = true
-            }
-            
-            // Authenticate with Spotify
-            await spotifyService.authenticate()
-            
-            if spotifyService.isAuthenticated {
-                print("🎵 Loading enhanced artist data from Spotify...")
-                
-                // Load popular artists from various genres
-                let genres = ["pop", "rock", "hip-hop", "electronic", "alternative", "r&b", "country", "indie", "latin", "metal"]
-                var enhancedArtists: [Artist] = []
-                
-                // Get a smaller initial set for enhanced processing (since it's more expensive)
-                for genre in genres {
-                    let spotifyArtists = await spotifyService.getArtistsByGenre(genre, limit: 20)
-                    let popularArtists = spotifyArtists.filter { $0.popularity >= 50 }
-                    
-                    print("📥 Processing \(popularArtists.count) popular \(genre) artists for enhanced data...")
-                    
-                    // Process each artist to get enhanced data
-                    for spotifyArtist in popularArtists.prefix(10) { // Limit to avoid rate limits
-                        if let enhancedArtist = await spotifyService.getEnhancedArtistData(name: spotifyArtist.name) {
-                            enhancedArtists.append(enhancedArtist)
-                            print("✅ Enhanced: \(enhancedArtist.name) - \(enhancedArtist.country) (\(enhancedArtist.debutYear))")
-                        } else {
-                            // Fallback to basic conversion
-                            enhancedArtists.append(spotifyArtist.toArtist())
-                        }
-                        
-                        // Small delay to avoid rate limits
-                        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
-                    }
-                }
-                
-                // Sort by popularity and remove duplicates
-                let uniqueArtists = Dictionary(grouping: enhancedArtists, by: { $0.name.lowercased() })
-                    .compactMap { _, artists in artists.first }
-                    .sorted { $0.spotifyPopularity > $1.spotifyPopularity }
-                
-                await MainActor.run {
-                    self.allArtists = Array(uniqueArtists.prefix(100)) // Keep top 100
-                    self.isLoadingFromSpotify = false
-                    print("✅ Loaded \(self.allArtists.count) enhanced artists from Spotify")
-                    
-                    // Update current game if it has no guesses yet
-                    self.updateGameWithEnhancedData()
-                }
-            } else {
-                print("❌ Spotify authentication failed, using fallback data")
-                await MainActor.run {
-                    self.loadFallbackArtists()
-                    self.isLoadingFromSpotify = false
-                }
-            }
-        }
-    }
-    
-    private func updateGameWithEnhancedData() {
-        if let currentGame = self.currentGame, 
-           currentGame.currentGuesses.isEmpty,
-           !self.allArtists.isEmpty {
-            print("🔄 Updating game with enhanced artist data...")
-            let randomEnhancedArtist = self.allArtists.randomElement()!
-            currentGame.targetArtistId = randomEnhancedArtist.id
-            self.targetArtist = randomEnhancedArtist
-            
-            do {
-                try self.modelContext.save()
-                print("✅ Updated game target to enhanced artist: \(randomEnhancedArtist.name) from \(randomEnhancedArtist.country)")
-            } catch {
-                print("❌ Error updating game with enhanced data: \(error)")
-            }
-        }
-    }
-    
-    // MARK: - Refresh Artist Data
-    func refreshArtistData(for artistName: String) async {
-        print("🔄 Refreshing data for artist: \(artistName)")
+    // MARK: - Reset Game (for testing)
+    func resetGame() {
+        print("🔄 Resetting game for testing...")
         
-        guard spotifyService.isAuthenticated else {
-            print("⚠️ Cannot refresh artist data - Spotify not authenticated")
+        // Delete current game
+        if let currentGame = currentGame {
+            modelContext.delete(currentGame)
+            print("🗑️ Deleted current game")
+        }
+        
+        // Clear target artist
+        targetArtist = nil
+        
+        // Save changes
+        do {
+            try modelContext.save()
+            print("✅ Game reset successfully")
+        } catch {
+            print("❌ Error resetting game: \(error)")
+        }
+        
+        // Setup new game
+        setupDailyGame()
+    }
+    
+    // MARK: - Replacement Artist Logic
+    private func findReplacementArtist(for targetId: String) -> Artist? {
+        // First try exact match (shouldn't happen if we got here, but just in case)
+        if let exactMatch = allArtists.first(where: { $0.id == targetId }) {
+            return exactMatch
+        }
+        
+        // Try to find by name if the ID contains a recognizable name pattern
+        let nameFromId = targetId.replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .lowercased()
+        
+        if let nameMatch = allArtists.first(where: { 
+            $0.name.lowercased().contains(nameFromId) || nameFromId.contains($0.name.lowercased())
+        }) {
+            print("🔍 Found artist by name pattern: \(nameMatch.name)")
+            return nameMatch
+        }
+        
+        // If all else fails, pick a random popular artist
+        let popularArtists = allArtists.filter { $0.spotifyPopularity >= 70 }
+        if let randomPopular = popularArtists.randomElement() {
+            print("🎲 Selected random popular artist as replacement: \(randomPopular.name)")
+            return randomPopular
+        }
+        
+        // Last resort: any artist
+        return allArtists.randomElement()
+    }
+    
+    private func ensureTargetArtistHasAudioPreview() async {
+        guard let target = targetArtist else { return }
+        
+        // If target artist already has audio preview, no need to fetch
+        if let previewURL = target.previewURL, !previewURL.isEmpty {
+            print("🎵 Target artist already has audio preview: \(previewURL)")
             return
         }
         
-        if let enhancedArtist = await spotifyService.getEnhancedArtistData(name: artistName) {
+        print("🎵 Target artist missing audio preview, fetching from Firestore...")
+        
+        // Try to get the artist from Firestore by name since ID formats might differ
+        if let firestoreArtist = await firestoreService.getArtistByName(target.name) {
             await MainActor.run {
-                if let index = self.allArtists.firstIndex(where: { $0.name.lowercased() == artistName.lowercased() }) {
-                    // Update existing artist with enhanced data
-                    self.allArtists[index] = enhancedArtist
-                    print("✅ Refreshed artist data: \(enhancedArtist.name) - \(enhancedArtist.country) (\(enhancedArtist.debutYear))")
+                if let previewURL = firestoreArtist.previewURL, !previewURL.isEmpty {
+                    print("🎵 Found audio preview in Firestore: \(previewURL)")
+                    // Update the target artist with Firestore data
+                    self.targetArtist = firestoreArtist
                 } else {
-                    // Add new artist if not found
-                    self.allArtists.append(enhancedArtist)
-                    print("➕ Added new enhanced artist: \(enhancedArtist.name)")
+                    print("🎵 No audio preview found in Firestore for: \(target.name)")
                 }
             }
+        } else {
+            print("🎵 Could not fetch artist from Firestore: \(target.name)")
         }
     }
-} 
+}

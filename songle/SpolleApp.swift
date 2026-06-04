@@ -1,15 +1,25 @@
 //
-//  songleApp.swift
-//  songle
+//  SpolleApp.swift
+//  Spolle
 //
 //  Created by Ümit BAĞ on 7/2/25.
 //
 
 import SwiftUI
 import SwiftData
+import FirebaseCore
+import GoogleMobileAds
 
 @main
-struct songleApp: App {
+struct SpolleApp: App {
+    
+    init() {
+        FirebaseApp.configure()
+        AdMobManager.shared.initialize()
+        
+        // Track app launch for rating system
+        AppRatingManager.shared.incrementAppLaunch()
+    }
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Artist.self,
